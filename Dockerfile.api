@@ -1,0 +1,35 @@
+# PropIQ — API (Layer 3) container
+FROM python:3.11-slim AS base
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+# System deps for psycopg2 / xgboost / torch wheels
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libpq-dev \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --upgrade pip && pip install -r requirements.txt
+
+# Full monorepo: data_layer, ml_layer, api_layer all live side-by-side so
+# imports like `from data_layer.models.database import Property` resolve.
+COPY data_layer/ ./data_layer/
+COPY ml_layer/ ./ml_layer/
+COPY api_layer/ ./api_layer/
+
+# Trained model artifacts (mounted as a volume in compose for hot-swaps;
+# copied here too so the image is runnable standalone).
+COPY models/ ./models/
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+CMD ["uvicorn", "api_layer.main:app", "--host", "0.0.0.0", "--port", "8000"]
