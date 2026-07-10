@@ -1,0 +1,72 @@
+version: "3.9"
+
+x-common-env: &common-env
+  DATABASE_URL: postgresql://propiq:propiq@db:5432/propiq
+  ENVIRONMENT: development
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: propiq-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: propiq
+      POSTGRES_PASSWORD: propiq
+      POSTGRES_DB: propiq
+    ports:
+      - "5432:5432"
+    volumes:
+      - propiq_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U propiq -d propiq"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: propiq-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      <<: *common-env
+      API_KEYS: ${PROPIQ_API_KEYS:-propiq-dev-key-change-me}
+      ENABLE_ML_SCHEDULER: "true"
+      ENABLE_AI_ANALYSIS: "true"
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      AVM_MODEL_PATH: /app/models/avm/latest
+      LSTM_MODEL_PATH: /app/models/lstm/latest
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount model artifacts so retrains (from the worker or the API's own
+      # MLScheduler) are picked up without rebuilding the image.
+      - propiq_models:/app/models
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: propiq-worker
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      <<: *common-env
+    volumes:
+      - propiq_models:/app/models
+
+volumes:
+  propiq_pgdata:
+  propiq_models:

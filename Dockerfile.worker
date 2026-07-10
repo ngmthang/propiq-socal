@@ -1,0 +1,22 @@
+# PropIQ — Data pipeline worker (Layer 1 scrapers + APScheduler)
+FROM python:3.11-slim AS base
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --upgrade pip && pip install -r requirements.txt
+
+COPY data_layer/ ./data_layer/
+
+# Entrypoint script starts the APScheduler process defined in
+# data_layer.pipeline.scheduler (nightly Zillow/Redfin scrape + feature refresh).
+CMD ["python", "-m", "data_layer.pipeline.scheduler"]
