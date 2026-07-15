@@ -1,0 +1,75 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+    body {
+        background-color: #f6f1e4;
+        background-image:
+            linear-gradient(rgba(33, 30, 25, 0.045) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(33, 30, 25, 0.045) 1px, transparent 1px);
+        background-size: 28px 28px;
+    }
+
+    ::selection {
+        background: #a6461f;
+        color: #f6f1e4;
+    }
+
+    :focus-visible {
+        outline: 2px solid #a6461f;
+        outline-offset: 2px;
+    }
+
+    h1, h2, h3, h4 {
+        font-family: "Fraunces", serif;
+        letter-spacing: -0.01em;
+    }
+}
+
+@layer components {
+    /* Signature element: the value-delta chip. Every ML prediction in the
+       app surfaces through this same shape so the model's output has one
+       recognizable identity across dashboard, detail, and recommendation views. */
+    .delta-chip {
+        @apply inline-flex items-center gap-1 rounder-full
+        px-2.5 py-1 font-mono text-xs font-medium;
+    }
+    .delta-chip.up {
+        @apply bg-sage/15 text-sage;
+    }
+    .delta-chip.down {
+        @apply bg-clay/15 text-clay;
+    }
+
+    .panel {
+        @apply rounded-x1 border border-line
+        bg-parchment/60 backdrop-blur-sm;
+    }
+
+    .btn-primary {
+        @apply inline-flex items-center justify-center
+        rounded-lg bg-terracotta px-4 py-2.5 text-sm
+        font-semibold text-parment transition-colors
+        hover:bg-terracotta-dark disabled:opacity-50
+        disabled:pointer-events-none;
+    }
+
+    .btn-secondary {
+        @apply inline-flex items-center justify-center rounded-lg
+        border border-ink/15 bg-transparent px-4 py-2.5 text-sm
+        font-semibold text-ink transition-colors
+        hover:bg-ink/5;
+    }
+
+    .field-label {
+        @apply mb-1.5 block text-xs font-semibold uppercase
+        tracking-wide text-ink/50;
+    }
+
+    .field-input {
+        @apply w-full rounded-lg border border-line bg-white/70
+        px-3 py-2.5 text-sm text-ink placeholder:text-ink/35
+        focus:border-terracotta focus:outline-none;
+    }
+}

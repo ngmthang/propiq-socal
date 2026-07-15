@@ -154,7 +154,7 @@ class PropertyFeature(Base):
     Engineered features used as ML model inputs.
     Computed from raw Property data + neighborhood data.
     """
-    __tablename__ = 'properties_features'
+    __tablename__ = 'property_features'
 
     id = Column(Integer, primary_key=True)
     property_id = Column(Integer, ForeignKey('properties.id'), unique=True)
@@ -410,7 +410,7 @@ class ScrapeJob(Base):
     completed_at = Column(DateTime)
     duration_secs = Column(Float)
     error_log = Column(Text)
-    metadata = Column(JSON)
+    job_metadata = Column("metadata", JSON)
 
 # DB Factory
 def get_engine(database_url: str):
