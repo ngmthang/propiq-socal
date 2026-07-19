@@ -63,18 +63,26 @@ export default function PropertyDetail() {
                     </h1>
                     <p className="mt-1 text-sm text-ink/55">
                         {property.zip_code} · {property.property_type?.replace("_", " ")} · {" "}
-                        {property.lot_size_sqft?.toLocaleString()} sqft lot
+                        {property.lot_sqft?.toLocaleString()} sqft lot
                     </p>
                 </div>
-                {valuation && <DeltaChip value={valuation.value_delta_pct ?? 0}/>}
+                {valuation && (
+                    <DeltaChip
+                        value={
+                            valuation.value_vs_list && valuation.list_price
+                                ? (valuation.value_vs_list / valuation.list_price) * 100
+                                : 0
+                        }
+                    />
+                )}
             </div>
             <div className="mt-6 grid grid-cols-3 gap-4">
                 <div className="panel p-5">
                     <p className="text-xs font-semibold uppercase tracking-wide text-ink/45">
-                        Current estmate
+                        Current estimate
                     </p>
                     <p className="mt-1 font-mono text-2xl font-medium">
-                        {currency(valuation?.current_value)}
+                        {currency(valuation?.estimated_value)}
                     </p>
                 </div>
                 <div className="panel p-5">

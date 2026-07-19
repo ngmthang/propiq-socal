@@ -32,7 +32,7 @@
        app surfaces through this same shape so the model's output has one
        recognizable identity across dashboard, detail, and recommendation views. */
     .delta-chip {
-        @apply inline-flex items-center gap-1 rounder-full
+        @apply inline-flex items-center gap-1 rounded-full
         px-2.5 py-1 font-mono text-xs font-medium;
     }
     .delta-chip.up {
@@ -43,14 +43,14 @@
     }
 
     .panel {
-        @apply rounded-x1 border border-line
+        @apply rounded-xl border border-line
         bg-parchment/60 backdrop-blur-sm;
     }
 
     .btn-primary {
         @apply inline-flex items-center justify-center
         rounded-lg bg-terracotta px-4 py-2.5 text-sm
-        font-semibold text-parment transition-colors
+        font-semibold text-parchment transition-colors
         hover:bg-terracotta-dark disabled:opacity-50
         disabled:pointer-events-none;
     }
