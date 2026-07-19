@@ -1,5 +1,5 @@
 import {useEffect, useState} from "react";
-import {DndContext, closetCorners} from "@dnd-kit/core";
+import {DndContext, closestCorners} from "@dnd-kit/core";
 import {projectsApi} from "../api/client.js";
 import KanbanColumn from "../components/KanbanColumn.jsx";
 
@@ -28,6 +28,8 @@ export default function ProjectBoard() {
         const newStatus = over.id;
         if(!COLUMNS.some((c) => c.id === newStatus)) return;
 
+        const originalStatus = tasks.find((t) => t.id === active.id)?.status;
+
         setTasks((prev) =>
             prev.map((t) => (t.id === active.id ? {...t, status: newStatus} : t))
         );
@@ -35,7 +37,7 @@ export default function ProjectBoard() {
             // Revert on failure - keep the board honest about what actually saved.
             setTasks((prev) =>
                 prev.map((t) =>
-                    t.id === active.id ? {...t, status: t.status} : t
+                    t.id === active.id ? {...t, status: originalStatus} : t
                 )
             );
         });
@@ -51,7 +53,7 @@ export default function ProjectBoard() {
             {loading ? (
                 <p className="mt-8 text-sm text-ink/45">Loading...</p>
             ) : (
-                <DndContext collisionDetection={closetCorners} onDragEnd={handleDragEnd}>
+                <DndContext collisionDetection={closestCorners} onDragEnd={handleDragEnd}>
                     <div className="mt-6 flex gap-4 overflow-x-auto pb-4">
                         {COLUMNS.map((col) => (
                             <KanbanColumn

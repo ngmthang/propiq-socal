@@ -17,10 +17,10 @@ export default function Dashboard() {
         setError("");
 
         propertiesApi
-            .search({zip, limit: 40})
+            .search({zip_code: zip, page_size: 40, include_analysis: true})
             .then((res) => {
                 if(cancelled) return;
-                setProperties(res.data.result ?? res.data ?? []);
+                setProperties(res.data.items ?? []);
             })
             .catch(() => {
                 if(!cancelled) setError("Couldn't load properties for that zip code.");
@@ -32,10 +32,16 @@ export default function Dashboard() {
         };
     }, [zip]);
 
+    useEffect(() => {
+        if (activeId == null) return;
+        document
+            .getElementById(`property-card-${activeId}`)
+            ?.scrollIntoView({behavior: "smooth", block: "nearest"});
+    }, [activeId]);
     const stats = useMemo(() => {
         if(!properties.length) return null;
         const avgLift =
-            properties.reduce((sum, p) => sum + (p.value_delta_ptc ?? 0), 0) /
+            properties.reduce((sum, p) => sum + (p.value_delta_pct ?? 0), 0) /
             properties.length;
         const totalValue = properties.reduce(
             (sum, p) => sum + (p.predicted_value ?? 0),
@@ -87,7 +93,7 @@ export default function Dashboard() {
             </header>
 
             <div className="flex flex-1 overflow-hidden">
-                <div className="w-[420px] shrink-0 oveflow-y-auto border-y border-line px-6 py-5">
+                <div className="w-[420px] shrink-0 overflow-y-auto border-y border-line px-6 py-5">
                     {loading && (
                         <p className="py-8 text-center text-sm text-ink/45">Loading...</p>
                     )}

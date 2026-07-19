@@ -22,6 +22,7 @@ export default function PropertyCard({property, active, onHover}) {
 
     return (
         <Link
+            id={`property-card-${id}`}
             to={`/properties/${id}`}
             onMouseEnter={() => onHover?.(id)}
             className={`block rounded-xl border p-4 transition-colors ${

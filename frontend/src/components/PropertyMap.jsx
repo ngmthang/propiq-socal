@@ -3,7 +3,7 @@ import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 
 // Set VITE_MAPBOX_TOKEN in .env - see .env.example
-mapboxgl.accesstoken = import.meta.env.VITE_MAPBOX_TOKEN || "";
+mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN || "";
 
 export default function PropertyMap({properties, activeId, onSelect}) {
     const containerRef = useRef(null);
@@ -50,7 +50,7 @@ export default function PropertyMap({properties, activeId, onSelect}) {
             el.style.cursor = "pointer";
             el.style.background = isUp ? "#6B7A56" : "#B23B2E";
             el.style.boxShadow =
-                e.id === activeId ? "0 0 0 4px rgba(166, 70, 31, 0.35)" : "none";
+                p.id === activeId ? "0 0 0 4px rgba(166, 70, 31, 0.35)" : "none";
             el.onclick = () => onSelect?.(p.id);
 
             const marker = new mapboxgl.Marker({element: el})
