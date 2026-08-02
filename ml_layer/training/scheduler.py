@@ -64,7 +64,7 @@ def retrain_lstm(db_url: str, engine_ref: Optional[list] = None):
     path = f"{MODEL_BASE}/lstm/{version}"
     logger.info(f"LSTM retrain starting -> {path}")
     try:
-        market_df = load_market_history(db_url, months=36)
+        market_df = load_market_history(db_url, months=60)
         if len(market_df) < 200:
             logger.warning(f"LSTM retrain skipped: only {len(market_df)} rows")
             return

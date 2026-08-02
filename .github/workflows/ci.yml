@@ -164,6 +164,7 @@ jobs:
 
       - name: Build
         run: npm run build
+
   migrations:
     name: Alembic upgrade + drift check
     runs-on: ubuntu-latest

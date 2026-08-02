@@ -75,7 +75,7 @@ class LSTMForecaster(nn.Module):
 class LSTMTrainer:
     def __init__(self, config: Optional[LSTMConfig] = None):
         self.config = config or LSTMConfig()
-        self.device = torch.device("cuba" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model: Optional[LSTMForecaster] = None
         self.scaler: Optional[MinMaxScaler] = None
         self._metrics: dict = {}
@@ -127,7 +127,7 @@ class LSTMTrainer:
         optimizer = torch.optim.AdamW(self.model.parameters(),
                                       lr=self.config.lr,
                                       weight_decay=self.config.weight_decay)
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 5)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', patience=5)
         loss_fn = nn.HuberLoss()
         loader = torch.utils.data.DataLoader(
             torch.utils.data.TensorDataset(Xtr, ytr), batch_size=self.config.batch_size, shuffle=True
@@ -199,7 +199,7 @@ class LSTMTrainer:
             json.dump({"config": cfg,
                        "metrics": self._metrics,
                        "n_features": len(self.config.feature_cols)},
-                       f, indet=2)
+                       f, indent=2)
         logger.info(f"LSTM saved to {p}")
 
     @classmethod
