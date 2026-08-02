@@ -43,13 +43,6 @@ class ZoningType(enum.Enum):
     OPEN_SPACE = 'OS'
     UNKNOWN = 'UNK'
 
-# Broad land-use category derived from zoning. Kept as a mapping + property
-# rather than a DB column so no migration is needed and it can never drift
-# out of sync with the underlying zoning value. NOTE: our enum's .value
-# strings (e.g. MIXED_USE='M1') are internal shorthand and deliberately NOT
-# real county zoning codes - in actual OC zoning data, 'M1' means Light
-# Industrial. Scrapers must map source codes to these enum members by
-# meaning, never by string value.
 ZONING_USE_CATEGORY = {
     ZoningType.RESIDENTIAL_LOW: 'residential',
     ZoningType.RESIDENTIAL_MEDIUM: 'residential',
@@ -63,6 +56,11 @@ ZONING_USE_CATEGORY = {
     ZoningType.OPEN_SPACE: 'open_space',
     ZoningType.UNKNOWN: 'unknown',
 }
+
+AVM_REQUIRED_FIELDS = (
+    'building_sqft', 'lot_size_sqft', 'bedrooms', 'bathrooms',
+    'latitude', 'longitude',
+)
 
 class ProjectStatus(enum.Enum):
     DRAFT = 'draft'
@@ -223,6 +221,21 @@ class Property(Base):
         """Broad land-use bucket (residential/commercial/industrial/...)
         derived from zoning. Not a stored column - always in sync."""
         return ZONING_USE_CATEGORY.get(self.zoning, 'unknown')
+
+    @property
+    def missing_avm_fields(self) -> list:
+        """Physical-feature fields required for a trustworthy AVM valuation
+        that this property lacks. Empty list means AVM-ready."""
+        return [f for f in AVM_REQUIRED_FIELDS if not getattr(self, f, None)]
+
+    @property
+    def is_avm_ready(self) -> bool:
+        """True if this property has real values for every feature the AVM
+        heavily weights. County parcel records (e.g. oc_parcel_gis rows)
+        typically lack sqft/bathrooms and are inventory, not AVM inputs -
+        valuing them off FeatureBuilder's imputation defaults would produce
+        a confident-looking number computed from fiction."""
+        return not self.missing_avm_fields
 
     def __repr__(self):
         return f'<Property {self.address} [{self.city}]>'

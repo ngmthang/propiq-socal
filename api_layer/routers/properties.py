@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from data_layer.models.database import Property
-from ml_layer.inference.engine import InferenceEngine
+from ml_layer.inference.engine import InferenceEngine, InsufficientDataError
 
 from ..core.auth import get_current_user
 from ..core.db import get_db
@@ -59,6 +59,16 @@ def get_valuation(
 
     try:
         result = engine.valuate(prop)
+    except InsufficientDataError as exc:
+        # Not a server fault: this property (e.g. a county parcel record)
+        # simply lacks the physical data a reliable valuation needs.
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                'message': 'Insufficient property data for a reliable valuation',
+                'missing_fields': exc.missing_fields,
+            },
+        ) from exc
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

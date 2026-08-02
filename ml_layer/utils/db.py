@@ -82,9 +82,19 @@ def load_training_data(db_url: str, months: int = 24) -> pd.DataFrame:
             LIMIT 1
         ) mt ON true
         WHERE p.last_sale_price IS NOT NULL
-          AND p.last_sale_date  >= :cutoff
-          AND p.last_sale_price  > 50000
-          AND p.last_sale_price  < 50000000
+          -- Explicit AVM-readiness bar (mirrors Property.is_avm_ready /
+          -- AVM_REQUIRED_FIELDS): rows missing core physical features must
+          -- not train the model on FeatureBuilder's imputation defaults.
+          -- Until now this was only implicitly true because sale prices
+          -- happened to exist only on complete seed rows; county parcel
+          -- ingests (442k oc_parcel_gis rows with no sqft/bathrooms) make
+          -- the implicit filter too fragile to rely on.
+          AND p.building_sqft  IS NOT NULL AND p.building_sqft  > 0
+          AND p.lot_size_sqft  IS NOT NULL AND p.lot_size_sqft  > 0
+          AND p.bedrooms       IS NOT NULL AND p.bedrooms       > 0
+          AND p.bathrooms      IS NOT NULL AND p.bathrooms      > 0
+          AND p.latitude       IS NOT NULL
+          AND p.longitude      IS NOT NULL
         ORDER BY p.last_sale_date ASC
     """)
 

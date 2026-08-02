@@ -21,9 +21,25 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from loguru import logger
 
+from .. import LSTMTrainer
 from ..training.avm_trainer import AVMTrainer
 from ..features.feature_builder import FeatureBuilder
 from .deal_analyzer import DealAnalyzer, PropertyContext, DealAnalysis
+from data_layer.models.database import AVM_REQUIRED_FIELDS
+
+class InsufficientDataError(ValueError):
+    """Raised when a property lacks the physical features the AVM needs.
+    Valuing such a property would silently run on FeatureBuilder's
+    imputation defaults (1500 sqft, 2 baths, ...) - a confident-looking
+    number computed from fiction. Callers should surface this as a
+    client-side condition (e.g. HTTP 422), not a server error."""
+
+    def __init__(self, missing_fields: list):
+        self.missing_fields = list(missing_fields)
+        super().__init__(
+            'Property lacks required data for a reliable valuation: '
+            + ', '.join(self.missing_fields)
+        )
 
 @dataclass
 class ValuationResult:
@@ -119,6 +135,11 @@ class InferenceEngine:
 
     def valuate(self, property_row) -> ValuationResult:
         property_row = self._as_dict(property_row)
+
+        missing = [f for f in AVM_REQUIRED_FIELDS if not property_row.get(f)]
+        if missing:
+            raise InsufficientDataError(missing)
+
         df = pd.DataFrame([property_row])
         X, _ = self.builder.build(df)
         pred = self.avm.model.predict(X)[0]
