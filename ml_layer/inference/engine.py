@@ -21,7 +21,12 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from loguru import logger
 
-from .. import LSTMTrainer
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    # Type-annotation-only: importing LSTMTrainer at runtime pulls torch
+    # (~2GB) via the package __getattr__, defeating the lazy-import design.
+    # The real runtime import stays deferred inside load().
+    from ..training.lstm_trainer import LSTMTrainer
 from ..training.avm_trainer import AVMTrainer
 from ..features.feature_builder import FeatureBuilder
 from .deal_analyzer import DealAnalyzer, PropertyContext, DealAnalysis
