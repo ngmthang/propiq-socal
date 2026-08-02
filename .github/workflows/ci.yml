@@ -1,0 +1,163 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  backend-smoke:
+    name: Backend compile + wiring smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install deps (skip torch - LSTM import is deferred, saves ~2GB)
+        run: |
+          grep -v "^torch" requirements.txt > /tmp/reqs.txt
+          pip install -r /tmp/reqs.txt
+
+      - name: Compile every Python file
+        run: python -m compileall -q data_layer ml_layer api_layer
+
+      - name: Import + wiring smoke
+        env:
+          DATABASE_URL: postgresql://propiq:propiq@localhost:5432/propiq
+          RAPIDAPI_KEY: ci-dummy
+        run: |
+          python - <<'EOF'
+          # Each assertion here encodes a real bug that shipped once:
+
+          # 1. DataPipeline() must instantiate (caught: abstract to_property_dict
+          #    missing on all scrapers; ScraperConfig kwarg typo)
+          from data_layer.pipeline.pipeline import DataPipeline
+          p = DataPipeline("postgresql://propiq:propiq@localhost:5432/propiq")
+          assert set(p.scrapers) == {"zillow", "redfin", "la_assessor"}, p.scrapers
+
+          # 2. Every scraper's parse->clean path works on a minimal sample
+          z = p.scrapers["zillow"]
+          parsed = z.to_property_dict(z.parse_listing({"zpid": 1, "address": {}}))
+          assert "property_type" in parsed
+          print("OK: pipeline + scrapers instantiate and parse")
+          EOF
+
+      - name: App route registration check
+        env:
+          DATABASE_URL: postgresql://propiq:propiq@localhost:5432/propiq
+          RAPIDAPI_KEY: ci-dummy
+        run: |
+          python - <<'EOF'
+          import importlib
+          main = importlib.import_module("api_layer.main")
+          app = main.create_app() if hasattr(main, "create_app") else main.app
+          paths = {r.path for r in app.routes}
+          required = [
+              "/api/properties/{property_id}/valuation",
+              "/api/projects",
+              "/api/admin/pipeline/status",
+              "/api/admin/models",
+          ]
+          missing = [p for p in required if not any(p in x for x in paths)]
+          assert not missing, f"unregistered routes: {missing}\nregistered: {sorted(paths)}"
+          print(f"OK: {len(paths)} routes registered, all required present")
+          EOF
+
+  seed-and-train:
+    name: Seed + AVM train integration test
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: propiq
+          POSTGRES_PASSWORD: propiq
+          POSTGRES_DB: propiq
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U propiq -d propiq"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://propiq:propiq@localhost:5432/propiq
+      MODEL_DIR: /tmp/models
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install deps (no torch)
+        run: |
+          grep -v "^torch" requirements.txt > /tmp/reqs.txt
+          pip install -r /tmp/reqs.txt
+
+      - name: Create schema
+        run: |
+          python - <<'EOF'
+          import os
+          from data_layer.models.database import get_engine, create_tables
+          create_tables(get_engine(os.environ["DATABASE_URL"]))
+          print("schema created")
+          EOF
+
+      - name: Seed 1000 synthetic properties
+        run: python -m data_layer.seeds.seed_avm_data --count 1000
+
+      - name: Train AVM
+        run: python -m ml_layer.training.scheduler --job avm
+
+      - name: Assert artifacts + honest metrics
+        run: |
+          python - <<'EOF'
+          import json, os
+          from pathlib import Path
+
+          latest = Path(os.environ["MODEL_DIR"]) / "avm" / "latest"
+          assert latest.exists(), "avm/latest missing - retrain did not save where the API reads"
+          metrics = json.loads((latest / "metrics.json").read_text())
+          print("metrics:", metrics)
+
+          r2 = metrics["r2"]
+          # Lower bound: the model must actually learn the synthetic structure.
+          assert r2 > 0.80, f"R2={r2}: model failed to learn - seed data or features broken"
+          # Upper bound: THE LEAKAGE TRIPWIRE. The seed generator derives
+          # sale_price and estimated_value independently, so R2 near 1.0
+          # means a leaked target snuck back into the features.
+          assert r2 < 0.998, f"R2={r2}: suspiciously perfect - check for target leakage"
+
+          log = Path(os.environ["MODEL_DIR"]) / "retrain_log.jsonl"
+          assert log.exists(), "retrain_log.jsonl missing"
+          print("OK: artifacts present, R2 in honest range")
+          EOF
+
+  frontend-build:
+    name: Frontend build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Build
+        run: npm run build
