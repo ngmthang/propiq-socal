@@ -58,7 +58,7 @@ jobs:
           import importlib
           main = importlib.import_module("api_layer.main")
           app = main.create_app() if hasattr(main, "create_app") else main.app
-          paths = {r.path for r in app.routes}
+          paths = {p for p in (getattr(r, "path", None) for r in app.routes) if p}
           required = [
               "/api/properties/{property_id}/valuation",
               "/api/projects",
