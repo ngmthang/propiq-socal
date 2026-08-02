@@ -63,7 +63,7 @@ def get_or_create_system_owner(session) -> User:
         email=SYSTEM_OWNER_EMAIL,
         full_name='OC Parcel Import (System)',
         password_hash='!disabled!',  # not a real login - never hashed/used for auth
-        role=UserRole.ADMIN,
+        role=UserRole.CLIENT,
         is_active=False,
     )
     session.add(owner)

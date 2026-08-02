@@ -58,7 +58,14 @@ async def get_current_user(
         # Legacy path: API-key callers act as the first admin user, if one
         # exists, so existing service-to-service integrations keep working
         # without needing a real account. Not intended for end users.
-        system_user = db.query(User).filter(User.role == UserRole.ADMIN).first()
+        # Must be an ACTIVE admin: ingest scripts create disabled system
+        # bot accounts, and those must never become the identity behind
+        # API-key calls.
+        system_user = (
+            db.query(User)
+            .filter(User.role == UserRole.ADMIN, User.is_active.is_(True))
+            .first()
+        )
         if system_user is not None:
             return system_user
 
@@ -67,6 +74,15 @@ async def get_current_user(
         detail="Not authenticated. Log in via /api/auth/login and pass the "
                "token as 'Authorization: Bearer <token>'.",
     )
+
+async def require_admin(user: User = Depends(get_current_user)) -> User:
+    """Dependency for admin-only routes: authenticated AND role == ADMIN."""
+    if user.role != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required.",
+        )
+    return user
 
 
 # Kept for any code that still imports it directly; new routers should use

@@ -201,7 +201,7 @@ class DataPipeline:
             email = SYSTEM_OWNER_EMAIL,
             full_name = 'Scraper Import (System)',
             password_hash = '!disabled!',  # not a real login - never hashed/used for auth
-            role = UserRole.ADMIN,
+            role=UserRole.CLIENT,
             is_active = False,
         )
         session.add(owner)

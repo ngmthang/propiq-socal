@@ -28,7 +28,7 @@ MODEL_BASE = os.getenv("MODEL_DIR", "models/saved")
 
 def retrain_avm(db_url: str, engine_ref: Optional[list] = None):
     version = datetime.utcnow().strftime("avm_%Y%m%d")
-    path = f"{MODEL_BASE}/{version}"
+    path = f"{MODEL_BASE}/avm/{version}"
     logger.info(f"AVM retrain starting -> {path}")
     try:
         df = load_training_data(db_url, months=24)
@@ -40,8 +40,11 @@ def retrain_avm(db_url: str, engine_ref: Optional[list] = None):
         metrics = trainer.train(df)
         trainer.save(path)
 
-        latest = Path(f"{MODEL_BASE}/avm_latest")
-        if latest.is_symlink(): latest.unlink()
+        latest = Path(f"{MODEL_BASE}/avm/latest")
+        if latest.is_symlink():
+            latest.unlink()
+        elif latest.exists():
+            latest.rename(Path(f"{MODEL_BASE}/avm/pre_{version}"))
         latest.symlink_to(Path(path).resolve())
 
         if engine_ref and engine_ref[0]:
@@ -58,7 +61,7 @@ def retrain_lstm(db_url: str, engine_ref: Optional[list] = None):
     from ..training.lstm_trainer import LSTMTrainer, LSTMConfig  # deferred: needs torch
 
     version = datetime.utcnow().strftime("lstm_%Y%m%d")
-    path = f"{MODEL_BASE}/{version}"
+    path = f"{MODEL_BASE}/lstm/{version}"
     logger.info(f"LSTM retrain starting -> {path}")
     try:
         market_df = load_market_history(db_url, months=36)
@@ -70,9 +73,12 @@ def retrain_lstm(db_url: str, engine_ref: Optional[list] = None):
         metrics = trainer.train(market_df)
         trainer.save(path)
 
-        lastest = Path(f"{MODEL_BASE}/lstm_latest")
-        if lastest.is_symlink(): lastest.unlink()
-        lastest.symlink_to(Path(path).resolve())
+        latest = Path(f"{MODEL_BASE}/lstm/latest")
+        if latest.is_symlink():
+            latest.unlink()
+        elif latest.exists():
+            latest.rename(Path(f"{MODEL_BASE}/lstm/pre_{version}"))
+        latest.symlink_to(Path(path).resolve())
 
         if engine_ref and engine_ref[0]:
             old_lstm = engine_ref[0].lstm
@@ -149,3 +155,21 @@ def _log_retrain_event(model: str, version: str, metrics: dict):
         f.write(json.dumps({"model": model, "version": version,
                             "metrics": metrics,
                             "logged_at": datetime.utcnow().isoformat()}) + "\n")
+
+if __name__ == "__main__":
+
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Run one ML training job immediately.")
+    parser.add_argument("--job", choices=["avm", "lstm", "eval"], default="avm",
+                        help="Which job to run once (default: avm)")
+    parser.add_argument("--db-url", default=os.getenv(
+        "DATABASE_URL", "postgresql://propiq:propiq@localhost:5433/propiq"))
+    args = parser.parse_args()
+
+    if args.job == "avm":
+        retrain_avm(args.db_url)
+    elif args.job == "lstm":
+        retrain_lstm(args.db_url)
+    else:
+        evaluate_live_accuracy(args.db_url)

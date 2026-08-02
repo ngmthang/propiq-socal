@@ -33,7 +33,7 @@ from .core.auth import JWTAuthMiddleware
 from .core.config import settings
 from .core.limiter import limiter
 from .dependencies.ml import MLState
-from .routers import properties, search, market, projects, auth
+from .routers import properties, search, market, projects, auth, admin
 
 if settings.SENTRY_DSN:
     import sentry_sdk
@@ -100,6 +100,10 @@ def create_app() -> FastAPI:
     app.include_router(auth.router)
     app.include_router(search.router)
     app.include_router(market.router)
+    # projects was imported but never registered - every /api/projects
+    # route (the whole Kanban board API) was 404ing until this line.
+    app.include_router(projects.router)
+    app.include_router(admin.router)
 
     # Health & meta
     @app.get("/", tags=["meta"])

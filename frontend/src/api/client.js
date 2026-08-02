@@ -49,3 +49,8 @@ export const projectsApi = {
 };
 
 export default client;
+
+export const adminApi = {
+    pipelineStatus: () => client.get("/admin/pipeline/status"),
+    models: () => client.get("/admin/models"),
+};
