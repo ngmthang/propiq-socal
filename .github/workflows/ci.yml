@@ -58,7 +58,10 @@ jobs:
           import importlib
           main = importlib.import_module("api_layer.main")
           app = main.create_app() if hasattr(main, "create_app") else main.app
-          paths = {p for p in (getattr(r, "path", None) for r in app.routes) if p}
+          # Introspect via the OpenAPI schema, not app.routes internals -
+          # route object shapes change across FastAPI versions, the schema
+          # is the stable public contract.
+          paths = set(app.openapi()["paths"].keys())
           required = [
               "/api/properties/{property_id}/valuation",
               "/api/projects",
@@ -67,7 +70,7 @@ jobs:
           ]
           missing = [p for p in required if not any(p in x for x in paths)]
           assert not missing, f"unregistered routes: {missing}\nregistered: {sorted(paths)}"
-          print(f"OK: {len(paths)} routes registered, all required present")
+          print(f"OK: {len(paths)} paths in OpenAPI schema, all required present")
           EOF
 
   seed-and-train:
