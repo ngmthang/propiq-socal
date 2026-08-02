@@ -164,3 +164,53 @@ jobs:
 
       - name: Build
         run: npm run build
+  migrations:
+    name: Alembic upgrade + drift check
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: propiq
+          POSTGRES_PASSWORD: propiq
+          POSTGRES_DB: propiq
+        ports: [ "5432:5432" ]
+        options: >-
+          --health-cmd "pg_isready -U propiq -d propiq"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://propiq:propiq@localhost:5432/propiq
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install deps (no torch)
+        run: |
+          grep -v "^torch" requirements.txt > /tmp/reqs.txt
+          pip install -r /tmp/reqs.txt
+
+      - name: Upgrade empty DB to head
+        run: alembic upgrade head
+
+      - name: Drift check - models must match migrations exactly
+        run: |
+          python - <<'EOF'
+          # Autogenerate against the freshly-migrated DB: any op.* in the
+          # result means someone changed the models without a migration.
+          import re, subprocess, glob
+          subprocess.run(["alembic", "revision", "--autogenerate", "-m", "ci_drift_check"], check=True)
+          f = glob.glob("migrations/versions/*ci_drift_check*")[0]
+          src = open(f).read()
+          body = re.search(r"def upgrade\(\).*?(?=def downgrade)", src, re.S).group(0)
+          assert "op." not in body, (
+              "MODEL/MIGRATION DRIFT: database.py changed without a migration.\n"
+              "Run: alembic revision --autogenerate -m 'describe change'\n\n" + body
+          )
+          print("OK: models and migrations are in sync")
+          EOF
