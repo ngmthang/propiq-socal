@@ -15,10 +15,12 @@ const currency = (n) =>
         }).format(n);
 
 export default function PropertyDetail() {
-    const {id} = useParams();
     const [property, setProperty] = useState(null);
     const [valuation, setValuation] = useState(null);
     const [analysis, setAnalysis] = useState(null);
+    // Set when the API returns 422: this property lacks the physical data
+    // (sqft/bathrooms/...) the AVM needs. Holds the missing-field list.
+    const [valuationUnavailable, setValuationUnavailable] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
 
@@ -26,17 +28,32 @@ export default function PropertyDetail() {
         let cancelled = false;
         setLoading(true);
         setError("");
+        setValuationUnavailable(null);
 
-        Promise.all([
-            propertiesApi.get(id),
-            propertiesApi.valuation(id),
-            propertiesApi.analysis(id),
-        ])
+        // The property fetch is the only hard requirement. Valuation and
+        // AI analysis fail soft: county parcel records (442k oc_parcel_gis
+        // rows) legitimately can't be valued, and a 422 there must not
+        // block the page - before this split, ANY parcel detail page
+        // showed "Couldn't load this property."
+        const valuationReq = propertiesApi.valuation(id).catch((err) => {
+            if (err?.response?.status === 422) {
+                const detail = err.response.data?.detail;
+                return {unavailable: detail?.missing_fields ?? []};
+            }
+            return null; // other valuation errors: just omit the panel data
+        });
+        const analysisReq = propertiesApi.analysis(id).catch(() => null);
+
+        Promise.all([propertiesApi.get(id), valuationReq, analysisReq])
             .then(([propRes, valRes, anaRes]) => {
                 if(cancelled) return;
                 setProperty(propRes.data);
-                setValuation(valRes.data);
-                setAnalysis(anaRes.data);
+                if (valRes?.unavailable) {
+                    setValuationUnavailable(valRes.unavailable);
+                } else {
+                    setValuation(valRes?.data ?? null);
+                }
+                setAnalysis(anaRes?.data ?? null);
             })
             .catch(() => !cancelled && setError("Couldn't load this property."))
             .finally(() => !cancelled && setLoading(false));
@@ -77,17 +94,36 @@ export default function PropertyDetail() {
                 )}
             </div>
             <div className="mt-6 grid grid-cols-3 gap-4">
+
                 <div className="panel p-5">
                     <p className="text-xs font-semibold uppercase tracking-wide text-ink/45">
                         Current estimate
                     </p>
-                    <p className="mt-1 font-mono text-2xl font-medium">
-                        {currency(valuation?.estimated_value)}
-                    </p>
-                    <p className="mt-1 text-xs text-ink/40">
-                        AI-generated estimate, not an appraisal
-                    </p>
+                    {valuationUnavailable ? (
+                        <>
+                            <p className="mt-1 text-sm font-medium text-ink/60">
+                                Valuation unavailable
+                            </p>
+                            <p className="mt-1 text-xs text-ink/40">
+                                This county parcel record is missing{" "}
+                                {valuationUnavailable
+                                    .map((f) => f.replace(/_/g, " "))
+                                    .join(", ")}{" "}
+                                — not enough data for a reliable estimate.
+                            </p>
+                        </>
+                    ) : (
+                        <>
+                            <p className="mt-1 font-mono text-2xl font-medium">
+                                {currency(valuation?.estimated_value)}
+                            </p>
+                            <p className="mt-1 text-xs text-ink/40">
+                                AI-generated estimate, not an appraisal
+                            </p>
+                        </>
+                    )}
                 </div>
+
                 <div className="panel p-5">
                     <p className="text-xs font-semibold uppercase tracking-wide text-ink/45">
                         Model confidence
