@@ -13,33 +13,37 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from data_layer.models.database import Property
+from data_layer.models.database import Property, Neighborhood
 from ml_layer.inference.engine import InferenceEngine
+from ml_layer.utils.db import load_market_history
 
-from ..core.auth import require_api_key
+from ..core.auth import get_current_user
+from ..core.config import settings
 from ..core.db import get_db
 from ..dependencies.ml import get_inference_engine
 from ..schemas.market import MarketSnapshot, MarketTrendResponse
 
-router = APIRouter(prefix="/api/market", tags=["market"], dependencies=[Depends(require_api_key)])
+router = APIRouter(prefix="/api/market", tags=["market"], dependencies=[Depends(get_current_user)])
 
 def _build_snapshot(db: Session, zip_code: str) -> MarketSnapshot:
     row = (
         db.query(
             func.percentile_cont(0.5).within_group(Property.sale_price.asc()).label("median_sale"),
             func.percentile_cont(0.5).within_group(Property.list_price.asc()).label("median_list"),
-            func.percentile_cont(0.5).within_group(Property.days_on_market.asc()).label("median_dom"),
             func.count(Property.id).label("inventory_count"),
         )
         .filter(Property.zip_code == zip_code)
         .first()
     )
 
+    neighborhood = db.query(Neighborhood).filter(Neighborhood.zip_code == zip_code).first()
+    median_dom = float(neighborhood.avg_days_on_market) if neighborhood and neighborhood.avg_days_on_market else None
+
     return MarketSnapshot(
         zip_code=zip_code,
         median_sale_price=float(row.median_sale) if row and row.median_sale else None,
         median_list_price=float(row.median_list) if row and row.median_list else None,
-        median_dom=float(row.median_dom) if row and row.median_dom else None,
+        median_dom=median_dom,
         inventory_count=int(row.inventory_count) if row else 0,
         sales_last_90d=None, # left for a dedicated data_layer aggregate query
         price_per_sqft=None, # left for a dedicated data_layer aggregate query
@@ -59,7 +63,9 @@ def get_market_trend(
         )
 
     try:
-        forecast = engine.forecast_zip(zip_code)
+        history = load_market_history(settings.DATABASE_URL)
+        zip_history = history[history["zip_code"] == zip_code].sort_values("month")
+        forecast = engine.forecast(zip_code, zip_history)
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

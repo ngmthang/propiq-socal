@@ -14,7 +14,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy import select
 
 from data_layer.models.database import (
-    Property, PropertyType, PriceHistory, ScrapeJob, get_session, get_engine
+    Property, PropertyType, ZoningType, PriceHistory, ScrapeJob, User, UserRole,
+    get_session, get_engine
 )
 from data_layer.scrapers.zillow_scraper import ZillowScraper
 from data_layer.scrapers.redfin_scraper import RedfinScraper, LACountyAssessorScraper
@@ -52,6 +53,14 @@ SOCAL_ZIP_CODES = {
 }
 
 ALL_ZIP_CODES = [zc for zcs in SOCAL_ZIP_CODES.values() for zc in zcs]
+
+# Property.owner_id and Property.zoning are both NOT NULL, but scraped
+# listings don't carry either - there's no PropIQ user attached to a
+# Zillow/Redfin/assessor record, and none of these sources report zoning.
+# This was silently fine while we only ingested seed data (which sets both
+# explicitly); it breaks the moment real scraper output hits _create_property.
+SYSTEM_OWNER_EMAIL = 'scraper-import@propiq.internal'
+DEFAULT_ZONING = ZoningType.RESIDENTIAL_LOW
 
 # Pipeline
 class DataPipeline:
@@ -175,8 +184,35 @@ class DataPipeline:
             prop = self._create_property(session, data)
             return 'created'
 
+    def _get_or_create_system_owner(self, session: Session) -> int:
+        """
+        Scraped listings (Zillow, Redfin, county assessors) don't come with
+        a PropIQ user attached, but Property.owner_id is NOT NULL. All
+        scraper-sourced properties get attributed to one shared, non-login
+        system account rather than leaving this unset.
+        """
+        owner = session.execute(
+            select(User).where(User.email == SYSTEM_OWNER_EMAIL)
+        ).scalar_one_or_none()
+        if owner:
+            return owner.id
+
+        owner = User(
+            email = SYSTEM_OWNER_EMAIL,
+            full_name = 'Scraper Import (System)',
+            password_hash = '!disabled!',  # not a real login - never hashed/used for auth
+            role = UserRole.ADMIN,
+            is_active = False,
+        )
+        session.add(owner)
+        session.flush()  # get owner.id without committing
+        logger.info(f'[Pipeline] created system owner user id={owner.id}')
+        return owner.id
+
     def _create_property(self, session: Session, data: dict) -> Property:
         prop = Property(
+            owner_id = data.get('owner_id') or self._get_or_create_system_owner(session),
+            zoning = data.get('zoning') or DEFAULT_ZONING,
             address = self._normalize_address(data.get('address', '')),
             city = data.get('city', ''),
             state = data.get('state', 'CA'),
@@ -265,6 +301,3 @@ class DataPipeline:
             'vacant_land': PropertyType.VACANT_LAND,
         }
         return mapping.get(type_str or "", PropertyType.SINGLE_FAMILY)
-
-
-

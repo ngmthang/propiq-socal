@@ -96,13 +96,17 @@ class FeatureBuilder:
         df['transit_score'] = df.get('transit_score', pd.Series(40.0, index=df.index)).fillna(40.0)
         df['school_rating'] = df.get('school_rating', pd.Series(6.0, index=df.index)).fillna(6.0)
         df['distance_to_cbd_miles'] = df.get('distance_to_cbd_miles', pd.Series(10.0, index=df.index)).fillna(10.0)
-        df['distance_to_coast_miles'] = df.get('distance_to_coast_miles', pd.Series(15.0, index=df.index)).fillna(15.0)
+        df['distance_to_coast_miles'] = pd.to_numeric(
+            df.get('distance_to_coast_miles', pd.Series(15.0, index=df.index)), errors='coerce'
+        ).fillna(15.0)
         return df
 
     def _market_features(self, df: pd.DataFrame) -> pd.DataFrame:
         bsqft = df['building_sqft'].clip(lower=1)
         lp = df.get('list_price', pd.Series(np.nan, index=df.index)).fillna(0)
-        df['days_on_market'] = df.get('days_on_market', pd.Series(30, index=df.index)).fillna(30)
+        df['days_on_market'] = pd.to_numeric(
+            df.get('days_on_market', pd.Series(30, index=df.index)), errors='coerce'
+        ).fillna(30)
         df['list_price_per_sqft'] = (lp / bsqft).clip(upper=2000)
         df['price_change_yoy'] = df.get('price_change_yoy', pd.Series(3.0, index=df.index)).fillna(3.0)
         df['neighborhood_median_price'] = df.get('neighborhood_median_price',
@@ -126,7 +130,9 @@ class FeatureBuilder:
 
     def _temporal_features(self, df: pd.DataFrame) -> pd.DataFrame:
         now = datetime.utcnow()
-        list_date = pd.to_datetime(df.get('list_date', now), errors='coerce').fillna(now)
+        list_date = pd.to_datetime(
+            df.get('list_date', pd.Series(now, index=df.index)), errors='coerce'
+        ).fillna(now)
         df['list_month'] = list_date.dt.month
         df['list_quarter'] = list_date.dt.quarter
         df['list_year_normalized'] = list_date.dt.year - 2010

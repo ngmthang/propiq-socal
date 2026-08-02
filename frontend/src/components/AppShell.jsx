@@ -1,5 +1,6 @@
 import { NavLink } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
+import DisclaimerBanner from "./DisclaimerBanner.jsx";
 
 const links = [
     {to: "/", label: "Properties", end: true},
@@ -48,7 +49,10 @@ export default function AppShell({children}) {
                 </button>
             </aside>
 
-            <main className="flex-1 overflow-y-auto">{children}</main>
+            <main className="flex-1 overflow-y-auto">
+                <DisclaimerBanner/>
+                {children}
+            </main>
         </div>
     );
 }

@@ -18,6 +18,11 @@ class Settings(BaseSettings):
     APP_NAME: str = "PropIQ API"
     APP_VERSION: str = "1.0.0"
     ENVIRONMENT: str = "development" # development | staging | production
+
+    # Error monitoring — leave empty to disable (see main.py). Get a DSN
+    # from sentry.io (free tier available) when you're ready to enable it.
+    SENTRY_DSN: str = ""
+
     DEBUG: bool = True
 
     # Database
@@ -31,9 +36,13 @@ class Settings(BaseSettings):
     API_KEYS: str = "propiq-dev-key-change-me"
     API_KEY_HEADER: str = "X-API-Key"
 
+    JWT_SECRET_KEY: str = "insecure-dev-secret-change-me-in-production"
+    JWT_ALGORITHM: str = "HS256"
+    JWT_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
+
     # ML model artifacts
-    AVM_MODEL_PATH: str = "/app/models/avm/lastest"
-    LSTM_MODEL_PATH: str = "/app/models/lstm/lastest"
+    AVM_MODEL_PATH: str = "/app/models/saved/avm/latest"
+    LSTM_MODEL_PATH: str = "/app/models/saved/lstm/latest"
     ENABLE_AI_ANALYSIS: bool = True
     ANTHROPIC_API_KEY: str | None = None
 
@@ -51,10 +60,10 @@ class Settings(BaseSettings):
 
     @property
     def api_keys_set(self) -> set[str]:
-        return {k.strip() for k in self.API_KEYS.split("") if k.strip()}
+        return {k.strip() for k in self.API_KEYS.split(",") if k.strip()}
 
     @property
-    def cors_origins_list(self) -> list[str]:
+    def cors_origins(self) -> list[str]:
         if self.CORS_ORIGINS.strip() == "*":
             return ["*"]
         return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]

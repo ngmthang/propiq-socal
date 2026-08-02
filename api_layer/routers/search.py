@@ -16,13 +16,13 @@ from sqlalchemy.orm import Session
 from data_layer.models.database import Property, PropertyType
 from ml_layer.inference.engine import InferenceEngine
 
-from ..core.auth import require_api_key
+from ..core.auth import get_current_user
 from ..core.config import settings
 from ..core.db import get_db
 from ..dependencies.ml import get_inference_engine
 from ..schemas.properties import PropertySearchResult, SearchResponse
 
-router = APIRouter(prefix="/api/search", tags=["Search"], dependencies=[Depends(require_api_key)])
+router = APIRouter(prefix="/api/search", tags=["Search"], dependencies=[Depends(get_current_user)])
 
 @router.get("", response_model=SearchResponse)
 def search_properties(
@@ -78,9 +78,15 @@ def search_properties(
         if include_analysis:
             try:
                 full = engine.analyze_property(prop, include_ai=False)
-                result.estimated_value = full.valuation.estimated_value
-                result.deal_score = full.deal_score
-            except Exception: # noqa: BLE001
+                estimated_value = float(full.valuation.estimated_value)
+                result.estimated_value = estimated_value
+                result.predicted_value = estimated_value
+                result.deal_score = int(full.deal_score)
+                if prop.list_price:
+                    result.value_delta_pct = round(
+                        (estimated_value - float(prop.list_price)) / float(prop.list_price) * 100, 2
+                    )
+            except Exception:  # noqa: BLE001
                 # Don't let one bad property tank the whole search response.
                 pass
 

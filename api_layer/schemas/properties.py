@@ -8,7 +8,7 @@ from .common import FeatureDriver
 # Property
 class PropertySummary(BaseModel):
     """Lightweight property representation for search/list views."""
-    id: str
+    id: int
     address: str
     city: str
     zip_code: str
@@ -81,6 +81,8 @@ class PropertySearchResult(PropertySummary):
     deal_score: int | None = None
     estimated_value: float | None = None
     deal_analysis_summary: str | None = None
+    predicted_value: float | None = None
+    value_delta_pct: float | None = None
 
 class SearchResponse(BaseModel):
     items: list[PropertySearchResult]

@@ -53,7 +53,7 @@ export default function valueTrendChart({history = [], forecast = []}) {
             .attr("transform", `translate(0, ${height - margin.bottom}`)
             .call(
                 d3
-                    .axixBottom(x)
+                    .axisBottom(x)
                     .ticks(6)
                     .tickSize(-(height - margin.top - margin.bottom))
             )

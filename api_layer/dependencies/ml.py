@@ -40,6 +40,7 @@ class MLState:
                 db_url=settings.DATABASE_URL,
                 avm_cron=settings.AVM_RETRAIN_CRON,
                 lstm_cron=settings.LSTM_RETRAIN_CRON,
+                engine_ref=[self.engine],
             )
             self.scheduler.start()
             logger.info("MLScheduler started.")

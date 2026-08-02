@@ -84,6 +84,9 @@ export default function PropertyDetail() {
                     <p className="mt-1 font-mono text-2xl font-medium">
                         {currency(valuation?.estimated_value)}
                     </p>
+                    <p className="mt-1 text-xs text-ink/40">
+                        AI-generated estimate, not an appraisal
+                    </p>
                 </div>
                 <div className="panel p-5">
                     <p className="text-xs font-semibold uppercase tracking-wide text-ink/45">

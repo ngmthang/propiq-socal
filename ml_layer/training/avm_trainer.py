@@ -69,7 +69,7 @@ class AVMTrainer:
 
         split = int(len(X) * (1 - self.config.test_size))
         X_train, X_val = X.iloc[:split], X.iloc[split:]
-        y_train, y_val = y.iloc[split:], y.iloc[split:]
+        y_train, y_val = y.iloc[:split], y.iloc[split:]
 
         xgb_params = dict(
             n_estimators=self.config.n_estimators, max_depth=self.config.max_depth,

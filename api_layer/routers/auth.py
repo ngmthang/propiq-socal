@@ -4,18 +4,19 @@
     replacing the shared dev API key as the primary access gate.
 
     @author Minh Thang Nguyen
-    @version July 24, 2026
+    @version July 28, 2026
 """
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from data_layer.models.database import User, UserRole
 
 from ..core.auth import get_current_user
 from ..core.db import get_db
+from ..core.limiter import limiter
 from ..core.security import create_access_token, hash_password, verify_password
 from ..schemas.auth import LoginRequest, RegisterRequest, TokenResponse, UserOut
 
@@ -23,7 +24,8 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
-def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> TokenResponse:
+@limiter.limit("5/minute")
+def register(request: Request, payload: RegisterRequest, db: Session = Depends(get_db)) -> TokenResponse:
     existing = db.query(User).filter(User.email == payload.email).first()
     if existing is not None:
         raise HTTPException(
@@ -46,7 +48,8 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> TokenRe
 
 
 @router.post("/login", response_model=TokenResponse)
-def login(payload: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse:
+@limiter.limit("10/minute")
+def login(request: Request, payload: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse:
     user = db.query(User).filter(User.email == payload.email).first()
     if user is None or not verify_password(payload.password, user.password_hash):
         # Same message for "no such user" and "wrong password" — don't leak

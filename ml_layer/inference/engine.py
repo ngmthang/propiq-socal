@@ -22,7 +22,6 @@ from datetime import datetime
 from loguru import logger
 
 from ..training.avm_trainer import AVMTrainer
-from ..training.lstm_trainer import LSTMTrainer
 from ..features.feature_builder import FeatureBuilder
 from .deal_analyzer import DealAnalyzer, PropertyContext, DealAnalysis
 
@@ -62,7 +61,7 @@ class InferenceEngine:
     AVM_VERSION = "avm_v1"
     LSTM_VERSION = "lstm_v1"
 
-    def __init__(self, avm: AVMTrainer, lstm: LSTMTrainer, analyzer: Optional[DealAnalyzer] = None):
+    def __init__(self, avm: AVMTrainer, lstm: Optional[LSTMTrainer] = None, analyzer: Optional[DealAnalyzer] = None):
         self.avm = avm
         self.lstm = lstm
         self.analyzer = analyzer
@@ -71,12 +70,55 @@ class InferenceEngine:
     @classmethod
     def from_paths(cls, avm_path: str, lstm_path: str, enable_ai: bool = True,
                    anthropic_key: Optional[str] = None) -> "InferenceEngine":
-        avm = AVMTrainer.load(avm_path)
-        lstm = LSTMTrainer.load(lstm_path)
-        analyzer = DealAnalyzer(api_key=anthropic_key) if enable_ai else None
+        avm = AVMTrainer.load(avm_path)  # required — no valuation without this
+
+        # LSTM is optional: the forecast/analysis endpoints degrade to a
+        # neutral placeholder forecast rather than the whole engine (and
+        # therefore all valuation endpoints too) failing to load just
+        # because forecasting isn't trained yet.
+        lstm = None
+        try:
+            from ..training.lstm_trainer import LSTMTrainer
+            lstm = LSTMTrainer.load(lstm_path)
+        except Exception as e:
+            logger.warning(
+                f"LSTM model not available ({e}). "
+                "Forecast/analysis endpoints will return a neutral placeholder "
+                "forecast until an LSTM model is trained and torch is working."
+            )
+
+        analyzer = None
+        if enable_ai:
+            try:
+                analyzer = DealAnalyzer(api_key=anthropic_key)
+            except ValueError as e:
+                logger.warning(f"{e} Continuing without AI deal analysis.")
+
         return cls(avm, lstm, analyzer)
 
-    def valuate(self, property_row: dict) -> ValuationResult:
+    @staticmethod
+    def _as_dict(property_row) -> dict:
+        """
+        Normalize either a plain dict (e.g. from ml_layer.utils.db.load_property_for_inference,
+        which joins property_features/neighborhoods for full feature fidelity) or a raw
+        SQLAlchemy Property ORM instance (e.g. passed directly from a router's DB query,
+        which only has Property's own columns — pf/neighborhood features will be absent
+        and FeatureBuilder will fall back to its defaults for those) into a plain dict.
+        """
+        if isinstance(property_row, dict):
+            return property_row
+        keys = [
+            "id", "address", "zip_code", "latitude", "longitude", "property_type",
+            "bedrooms", "bathrooms", "building_sqft", "lot_size_sqft", "year_built",
+            "list_price", "sale_price", "walk_score", "transit_score", "school_rating",
+            "development_score", "adu_eligible", "underbuilt_ratio", "distance_to_cbd_miles",
+            "distance_to_coast_miles", "neighborhood_median_price", "price_change_yoy",
+            "days_on_market", "inventory_months", "absorption_rate", "neighborhood_name",
+        ]
+        return {k: v for k, v in ((k, getattr(property_row, k, None)) for k in keys) if v is not None}
+
+    def valuate(self, property_row) -> ValuationResult:
+        property_row = self._as_dict(property_row)
         df = pd.DataFrame([property_row])
         X, _ = self.builder.build(df)
         pred = self.avm.model.predict(X)[0]
@@ -98,17 +140,26 @@ class InferenceEngine:
     def _shap_drivers(self, X: pd.DataFrame, top_n: int = 5) -> list[dict]:
         if self.avm.explainer is None: return []
         try:
-            X_scaled = self.avm.model.named_steps['scaled'].transform(X)
+            X_scaled = self.avm.model.named_steps['scaler'].transform(X)
             shap_vals = self.avm.explainer.shap_values(X_scaled)
             row = shap_vals[0]
             pairs = sorted(zip(X.columns.tolist(), row), key=lambda kx: abs(kx[1]), reverse=True)
-            return [{"feature": col, "impact": round(float(val), 0),
-                     "direction": "up" if val > 0 else "down"} for col, val in pairs[:top_n]]
+            return [{"feature": col, "contribution": round(float(val), 0),
+                     "direction": "positive" if val > 0 else "negative"} for col, val in pairs[:top_n]]
         except Exception as e:
             logger.warning(f"SHAP computation failed: {e}")
             return []
 
-    def forecast(self, zip_code: str, market_history_df: pd.DataFrame) -> ForecastResult:
+    def forecast(self, zip_code: str, market_history_df: Optional[pd.DataFrame] = None) -> ForecastResult:
+        if self.lstm is None or market_history_df is None or market_history_df.empty:
+            return ForecastResult(
+                zip_code=zip_code,
+                forecast_3mo=0.0, forecast_6mo=0.0, forecast_12mo=0.0,
+                trend_signal="neutral",
+                model_version="unavailable",
+                predicted_at=datetime.utcnow().isoformat(),
+            )
+
         feat_cols = self.lstm.config.feature_cols
         lb = self.lstm.config.lookback_months
         seq = market_history_df.tail(lb)[feat_cols].values
@@ -128,13 +179,14 @@ class InferenceEngine:
             predicted_at = datetime.utcnow().isoformat(),
         )
 
-    def analyze_property(self, property_row: dict, market_history_df: pd.DataFrame,
-                         comparables: Optional[list[dict]] = None, use_ai: bool = True) -> FullPropertyAnalysis:
+    def analyze_property(self, property_row, market_history_df: Optional[pd.DataFrame] = None,
+                         comparables: Optional[list[dict]] = None, include_ai: bool = True) -> FullPropertyAnalysis:
+        property_row = self._as_dict(property_row)
         val = self.valuate(property_row)
         forecast = self.forecast(property_row.get("zip_code", ""), market_history_df)
 
         deal_analysis = None
-        if use_ai and self.analyzer:
+        if include_ai and self.analyzer:
             ctx = self._build_context(property_row, val, forecast, comparables or [])
             try:
                 deal_analysis = self.analyzer.analyze(ctx)

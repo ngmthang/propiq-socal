@@ -1,10 +1,11 @@
 import {useState} from "react";
-import {useNavigate} from "react-router-dom";
+import {Link, useNavigate} from "react-router-dom";
 import {useAuth} from "../context/AuthContext.jsx";
-import client from "../api/client.js";
+import {authApi} from "../api/client.js";
 
 export default function Login() {
-    const [key, setKey] = useState("");
+    const [email, setEmail] = useState("");
+    const [password, setPassword] = useState("");
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(false);
     const {login} = useAuth();
@@ -15,18 +16,13 @@ export default function Login() {
         setError("");
         setLoading(true);
         try {
-            // Layer 3's health endpoint is unauthenticated; verify the key against
-            // a real gated route instead so a bad key surfaces before landing.
-            await client.get("/search", {
-                params: {zip: "90210", limit: 1},
-                headers: {"X-API-Key": key},
-            });
-            login(key);
+            const res = await authApi.login({email, password});
+            login(res.data.access_token, res.data.user);
             navigate("/", {replace: true});
         } catch(err) {
             setError(
                 err.response?.status === 401
-                    ? "That API key was rejected."
+                    ? "Incorrect email or password."
                     : "Couldn't reach PropIQ - is the API running?"
             );
         } finally {
@@ -53,17 +49,32 @@ export default function Login() {
 
                 <form onSubmit={handleSubmit} className="panel space-y-4 p-6">
                     <div>
-                        <label className="field-label" htmlFor="key">
-                            API key
+                        <label className="field-label" htmlFor="email">
+                            Email
                         </label>
                         <input
-                            id="key"
+                            id="email"
+                            type="email"
+                            className="field-input"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            placeholder="you@example.com"
+                            autoFocus
+                            required
+                        />
+                    </div>
+
+                    <div>
+                        <label className="field-label" htmlFor="password">
+                            Password
+                        </label>
+                        <input
+                            id="password"
                             type="password"
                             className="field-input"
-                            value={key}
-                            onChange={(e) => setKey(e.target.value)}
-                            placeholder="sk-propiq-..."
-                            autoFocus
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            placeholder="********"
                             required
                         />
                     </div>
@@ -71,8 +82,15 @@ export default function Login() {
                     {error && <p className="text-sm text-clay">{error}</p>}
 
                     <button type="submit" disabled={loading} className="btn-primary w-full">
-                        {loading ? "Checking..." : "Sign in"}
+                        {loading ? "Signing in..." : "Sign in"}
                     </button>
+
+                    <p className="text-center text-sm text-ink/60">
+                        No account?{" "}
+                        <Link to="/register" className="text-terracotta hover:underline">
+                            Create one
+                        </Link>
+                    </p>
                 </form>
             </div>
         </div>

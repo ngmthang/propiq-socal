@@ -24,7 +24,7 @@ class ZillowScraper(BaseScraper):
         config = ScraperConfig(
             source_name = 'zillow',
             base_url = f'https://{ZILLOW_API_HOST}',
-            request_headers = 10, # RapidAPI free tier is slow
+            requests_per_minute = 10, # RapidAPI free tier is slow
             extra_headers = {
                 'X-RapidAPI-Key': ZILLOW_API_KEY,
                 'X-RapidAPI-Host': ZILLOW_API_HOST,
@@ -107,7 +107,7 @@ class ZillowScraper(BaseScraper):
             'longitude': address.get('longitude', ''),
 
             # Physical
-            'property_type': self._map_property_type(raw.get('propertyType', '')),
+            'property_type': self._map_home_type(raw.get('propertyType', '')),
             'bedrooms': raw.get('bedrooms'),
             'bathrooms': raw.get('bathrooms'),
             'building_sqft': raw.get('livingArea'),
@@ -136,3 +136,6 @@ class ZillowScraper(BaseScraper):
         }
         return mapping.get(zillow_type.upper(), 'single_family')
 
+    def to_property_dict(self, parsed: dict) -> dict:
+        """parse_listing() already outputs PropIQ's standard schema - nothing left to transform."""
+        return parsed

@@ -12,13 +12,12 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from jedi.third_party.typeshed.stubs.docutils.docutils.utils.math.mathml_elements import mo
 from sqlalchemy.orm import Session
 
 from data_layer.models.database import Property
 from ml_layer.inference.engine import InferenceEngine
 
-from ..core.auth import require_api_key
+from ..core.auth import get_current_user
 from ..core.db import get_db
 from ..dependencies.ml import get_inference_engine
 from ..schemas.common import FeatureDriver
@@ -33,10 +32,10 @@ from ..schemas.properties import (
 router = APIRouter(
     prefix="/api/properties",
     tags=["properties"],
-    dependencies=[Depends(require_api_key)],
+    dependencies=[Depends(get_current_user)],
 )
 
-def _get_property_or_404(db: Session, property_id: str) -> Property:
+def _get_property_or_404(db: Session, property_id: int) -> Property:
     prop = db.query(Property).filter(Property.id == property_id).first()
     if prop is None:
         raise HTTPException(
@@ -46,21 +45,20 @@ def _get_property_or_404(db: Session, property_id: str) -> Property:
     return prop
 
 @router.get("/{property_id}", response_model=PropertyDetail)
-def get_property(property_id: str, db: Session = Depends(get_db)) -> PropertyDetail:
+def get_property(property_id: int, db: Session = Depends(get_db)) -> PropertyDetail:
     prop = _get_property_or_404(db, property_id)
     return PropertyDetail.model_validate(prop)
 
 @router.get("/{property_id}/valuation", response_model=ValuationResponse)
 def get_valuation(
-        property_id: str,
+        property_id: int,
         db: Session = Depends(get_db),
         engine: InferenceEngine = Depends(get_inference_engine),
 ) -> ValuationResponse:
     prop = _get_property_or_404(db, property_id)
 
     try:
-        result = engine.estimate_value(prop) if hasattr(engine, "estimate_value") \
-            else engine.avm.predict_one(prop, feature_builder=engine.builder)
+        result = engine.valuate(prop)
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

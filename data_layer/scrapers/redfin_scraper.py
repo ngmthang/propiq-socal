@@ -128,6 +128,10 @@ class RedfinScraper(BaseScraper):
         }
         return mapping.get(rf_type, 'single_family')
 
+    def to_property_dict(self, parsed: dict) -> dict:
+        """parse_listing() already outputs PropIQ's standard schema - nothing left to transform."""
+        return parsed
+
 # LA COUNTY ASSESSOR SCRAPER
 # Public Records - No Auth Needed. Great For Parcel/Zoning Data.
 class LACountyAssessorScraper(BaseScraper):
@@ -209,3 +213,7 @@ class LACountyAssessorScraper(BaseScraper):
         if code in commercial: return 'commercial'
         if code.startswith('8'): return 'vacant_land'
         return 'single_family'
+
+    def to_property_dict(self, parsed: dict) -> dict:
+        """parse_listing() already outputs PropIQ's standard schema - nothing left to transform."""
+        return parsed

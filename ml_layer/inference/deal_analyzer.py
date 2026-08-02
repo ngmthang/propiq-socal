@@ -121,7 +121,13 @@ class DealAnalyzer:
     MODEL = "claude-sonnet-4-6"
 
     def __init__(self, api_key: Optional[str] = None):
-        self.client = anthropic.Anthropic(api_key=api_key or os.environ["ANTHROPIC_API_KEY"])
+        resolved_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
+        if not resolved_key:
+            raise ValueError(
+                "No Anthropic API key provided (pass api_key= or set ANTHROPIC_API_KEY). "
+                "AI deal analysis is unavailable without one."
+            )
+        self.client = anthropic.Anthropic(api_key=resolved_key)
 
     def analyze(self, ctx: PropertyContext) -> DealAnalysis:
         prompt = _build_prompt(ctx)

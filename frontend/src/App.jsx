@@ -2,10 +2,12 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import { useAuth } from "./context/AuthContext.jsx";
 import AppShell from "./components/AppShell.jsx";
 import Login from "./pages/Login.jsx";
+import Register from "./pages/Register.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
 import PropertyDetail from "./pages/PropertyDetail.jsx";
 import ProjectBoard from "./pages/ProjectBoard.jsx";
 import AdminDashboard from "./pages/AdminDashboard.jsx";
+import Legal from "./pages/Legal.jsx";
 
 function Protected({ children }) {
     const { isAuthed } = useAuth();
@@ -16,6 +18,8 @@ export default function App() {
     return(
         <Routes>
             <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<Register />} />
+            <Route path="/legal" element={<Legal />} />
             <Route
                 path="/*"
                 element={

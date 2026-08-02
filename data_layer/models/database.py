@@ -12,6 +12,7 @@ from sqlalchemy import(
     Boolean, DateTime, ForeignKey, JSON, Enum, Index
 )
 from sqlalchemy.orm import declarative_base, relationship, Session
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.dialects.postgresql import ARRAY
 import enum
 
@@ -39,6 +40,29 @@ class ZoningType(enum.Enum):
     INDUSTRIAL_HEAVY = 'I2'
     MIXED_USE = 'M1'
     AGRICULTURAL = 'A1'
+    OPEN_SPACE = 'OS'
+    UNKNOWN = 'UNK'
+
+# Broad land-use category derived from zoning. Kept as a mapping + property
+# rather than a DB column so no migration is needed and it can never drift
+# out of sync with the underlying zoning value. NOTE: our enum's .value
+# strings (e.g. MIXED_USE='M1') are internal shorthand and deliberately NOT
+# real county zoning codes - in actual OC zoning data, 'M1' means Light
+# Industrial. Scrapers must map source codes to these enum members by
+# meaning, never by string value.
+ZONING_USE_CATEGORY = {
+    ZoningType.RESIDENTIAL_LOW: 'residential',
+    ZoningType.RESIDENTIAL_MEDIUM: 'residential',
+    ZoningType.RESIDENTIAL_HIGH: 'residential',
+    ZoningType.COMMERCIAL: 'commercial',
+    ZoningType.COMMERCIAL_GENERAL: 'commercial',
+    ZoningType.INDUSTRIAL_LIGHT: 'industrial',
+    ZoningType.INDUSTRIAL_HEAVY: 'industrial',
+    ZoningType.MIXED_USE: 'mixed_use',
+    ZoningType.AGRICULTURAL: 'agricultural',
+    ZoningType.OPEN_SPACE: 'open_space',
+    ZoningType.UNKNOWN: 'unknown',
+}
 
 class ProjectStatus(enum.Enum):
     DRAFT = 'draft'
@@ -137,14 +161,68 @@ class Property(Base):
     projects = relationship('Project', back_populates='property')
     features = relationship('PropertyFeature', back_populates='property', uselist=False)
     neighborhood = relationship('Neighborhood', back_populates='properties',
-                                primaryjoin='Property.zip_code == foreign(Neighborhood.zip_code)')
+                                primaryjoin='foreign(Property.zip_code) == Neighborhood.zip_code')
     price_history = relationship('PriceHistory', back_populates='property', cascade='all, delete-orphan')
+
+    @hybrid_property
+    def beds(self):
+        return self.bedrooms
+
+    @beds.expression
+    def beds(cls):
+        return cls.bedrooms
+
+    @hybrid_property
+    def baths(self):
+        return self.bathrooms
+
+    @baths.expression
+    def baths(cls):
+        return cls.bathrooms
+
+    @hybrid_property
+    def lot_sqft(self):
+        return self.lot_size_sqft
+
+    @lot_sqft.expression
+    def lot_sqft(cls):
+        return cls.lot_size_sqft
+
+    @hybrid_property
+    def sale_price(self):
+        return self.last_sale_price
+
+    @sale_price.expression
+    def sale_price(cls):
+        return cls.last_sale_price
+
+    @hybrid_property
+    def list_price(self):
+        return self.estimated_value  # proxy — no real listing-price column yet
+
+    @list_price.expression
+    def list_price(cls):
+        return cls.estimated_value
+
+    @hybrid_property
+    def last_sold_date(self):
+        return self.last_sale_date
+
+    @last_sold_date.expression
+    def last_sold_date(cls):
+        return cls.last_sale_date
 
     __table_args__ = (
         Index('ix_prop_location', 'latitude', 'longitude'),
         Index('ix_prop_zip', 'zip_code'),
         Index('ix_prop_city', 'city'),
     )
+
+    @property
+    def use_category(self) -> str:
+        """Broad land-use bucket (residential/commercial/industrial/...)
+        derived from zoning. Not a stored column - always in sync."""
+        return ZONING_USE_CATEGORY.get(self.zoning, 'unknown')
 
     def __repr__(self):
         return f'<Property {self.address} [{self.city}]>'
@@ -292,7 +370,7 @@ class Neighborhood(Base):
 
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    properties = relationship('Property', back_populates='neighborhoods',
+    properties = relationship('Property', back_populates='neighborhood',
                               primaryjoin='Neighborhood.zip_code == foreign(Property.zip_code)',
                               foreign_keys='Property.zip_code')
 

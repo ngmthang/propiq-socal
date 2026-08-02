@@ -1,7 +1,8 @@
 import axios from "axios";
 
-// Layer 3 (FastAPI) exposes /api/properties, /api/search, /api/market/{zip}
-// and the per-property /valuation, and /analysis endpoints (InferenceEngine).
+// Layer 3 (FastAPI) exposes /api/auth (register/login/me), /api/properties,
+// /api/search, /api/market/{zip}, and /api/projects. Auth is a JWT bearer
+// token issued by /api/auth/login or /api/auth/register.
 
 const client = axios.create({
     baseURL: "/api",
@@ -9,8 +10,8 @@ const client = axios.create({
 });
 
 client.interceptors.request.use((config) => {
-    const key = localStorage.getItem("propiq_api_key");
-    if (key) config.headers["X-API-Key"] = key;
+    const token = localStorage.getItem("propiq_token");
+    if (token) config.headers["Authorization"] = `Bearer ${token}`;
     return config;
 });
 
@@ -18,11 +19,18 @@ client.interceptors.response.use(
     (res) => res,
     (err) => {
         if(err.response?.status === 401) {
-            localStorage.removeItem("propiq_api_key");
+            localStorage.removeItem("propiq_token");
+            localStorage.removeItem("propiq_user");
         }
         return Promise.reject(err);
     }
 );
+
+export const authApi = {
+    register: (payload) => client.post("/auth/register", payload),
+    login: (payload) => client.post("/auth/login", payload),
+    me: () => client.get("/auth/me"),
+};
 
 export const propertiesApi = {
     search: (params) => client.get("/search", { params }),

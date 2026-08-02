@@ -20,8 +20,8 @@ from data_layer.models.database import Base # noqa: F401
 
 engine = create_engine(
     settings.DATABASE_URL,
-    pool_size=settings.POOL_SIZE,
-    max_overflow=settings.MAX_OVERFLOW,
+    pool_size=settings.DB_POOL_SIZE,
+    max_overflow=settings.DB_MAX_OVERFLOW,
     pool_pre_ping=True,
 )
 

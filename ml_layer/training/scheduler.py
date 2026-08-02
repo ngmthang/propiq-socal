@@ -21,7 +21,6 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from ..training.avm_trainer import AVMTrainer, AVMConfig
-from ..training.lstm_trainer import LSTMTrainer, LSTMConfig
 from ..inference.engine import InferenceEngine
 from ..utils.db import load_training_data, load_market_history
 
@@ -56,6 +55,8 @@ def retrain_avm(db_url: str, engine_ref: Optional[list] = None):
         logger.error(f"AVM retrain failed: {e}")
 
 def retrain_lstm(db_url: str, engine_ref: Optional[list] = None):
+    from ..training.lstm_trainer import LSTMTrainer, LSTMConfig  # deferred: needs torch
+
     version = datetime.utcnow().strftime("lstm_%Y%m%d")
     path = f"{MODEL_BASE}/{version}"
     logger.info(f"LSTM retrain starting -> {path}")
@@ -104,19 +105,22 @@ def evaluate_live_accuracy(db_url: str, engine_ref: Optional[list] = None):
 
 
 class MLScheduler:
-    def __init__(self, db_url: str, engine_ref: Optional[list] = None):
+    def __init__(self, db_url: str, avm_cron: str = "0 3 * * 0", lstm_cron: str = "0 4 1 * *",
+                 engine_ref: Optional[list] = None):
         self.db_url = db_url
+        self.avm_cron = avm_cron
+        self.lstm_cron = lstm_cron
         self.engine_ref = engine_ref
-        self._scheduler = BackgroundScheduler(timezone="American/Los_Angeles")
+        self._scheduler = BackgroundScheduler(timezone="America/Los_Angeles")
 
     def start(self):
         self._scheduler.add_job(
-            func=retrain_avm, trigger=CronTrigger(day_of_week="sun", hour=3, minute=0),
+            func=retrain_avm, trigger=CronTrigger.from_crontab(self.avm_cron),
             kwargs={"db_url": self.db_url, "engine_ref": self.engine_ref},
             id="avm_retrain", name="AVM Weekly Retrain", replace_existing=True,
         )
         self._scheduler.add_job(
-            func=retrain_lstm, trigger=CronTrigger(day=1, hour=4, minute=0),
+            func=retrain_lstm, trigger=CronTrigger.from_crontab(self.lstm_cron),
             kwargs={"db_url": self.db_url, "engine_ref": self.engine_ref},
             id="lstm_retrain", name="LSTM Weekly Retrain", replace_existing=True,
         )
@@ -126,7 +130,7 @@ class MLScheduler:
             id="live_eval", name="Daily Live Accuracy Eval", replace_existing=True,
         )
         self._scheduler.start()
-        logger.info("MLScheduler started | AVM=Sunday@3AM, LSTM=1st@4Am, Eval=Daily@7AM")
+        logger.info(f"MLScheduler started | AVM={self.avm_cron}, LSTM={self.lstm_cron}, Eval=Daily@7AM")
 
     def shutdown(self):
         self._scheduler.shutdown(wait=False)

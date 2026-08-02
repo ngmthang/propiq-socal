@@ -25,11 +25,28 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from loguru import logger
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
-from .core.auth import APIKeyMiddleware
+from .core.auth import JWTAuthMiddleware
 from .core.config import settings
+from .core.limiter import limiter
 from .dependencies.ml import MLState
-from .routers import properties, search, market
+from .routers import properties, search, market, projects, auth
+
+if settings.SENTRY_DSN:
+    import sentry_sdk
+    sentry_sdk.init(
+        dsn=settings.SENTRY_DSN,
+        environment=settings.ENVIRONMENT,
+        release=settings.APP_VERSION,
+        traces_sample_rate=0.1,
+        send_default_pii=False,
+    )
+    logger.info("Sentry error monitoring enabled")
+else:
+    logger.info("SENTRY_DSN not set - error monitoring disabled")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -62,6 +79,10 @@ def create_app() -> FastAPI:
         redoc_url="/redoc",
     )
 
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+    app.add_middleware(SlowAPIMiddleware)
+
     # CORS
     app.add_middleware(
         CORSMiddleware,
@@ -72,10 +93,11 @@ def create_app() -> FastAPI:
     )
 
     # API-key gate (belt-and-suspenders alongside the per-router dependency)
-    app.add_middleware(APIKeyMiddleware)
+    app.add_middleware(JWTAuthMiddleware)
 
     # Routers
     app.include_router(properties.router)
+    app.include_router(auth.router)
     app.include_router(search.router)
     app.include_router(market.router)
 
@@ -95,6 +117,7 @@ def create_app() -> FastAPI:
             "status": "ok",
             "engine_loaded": ml_state.engine is not None,
             "scheduler_running": ml_state.scheduler is not None,
+            "version": settings.APP_VERSION,
         }
 
     # Error handling
