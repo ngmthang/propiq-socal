@@ -1,4 +1,40 @@
-FROM ubuntu:latest
-LABEL authors="nguye"
+# PropIQ - Production API image (torch-free, stateless serving replica)
+# Deliberately excludes torch and scraping libs: this container serves
+# XGBoost AVM valuations only, small enough for free-tier RAM and safe to
+# run as N identical replicas behind a load balancer. Training lives in the
+# worker. Scaling up = run more of these / bigger instance, not a rewrite.
+FROM python:3.11-slim
 
-ENTRYPOINT ["top", "-b"]
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    SERVING_ONLY=true \
+    ENVIRONMENT=production
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential libpq-dev curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements-api.txt .
+RUN pip install --upgrade pip && pip install -r requirements-api.txt
+
+# ml_layer is imported for the inference engine, but with SERVING_ONLY=true
+# it never touches ml_layer/training/lstm_trainer.py (the torch module).
+COPY data_layer/ ./data_layer/
+COPY ml_layer/ ./ml_layer/
+COPY api_layer/ ./api_layer/
+COPY alembic.ini .
+COPY migrations/ ./migrations/
+
+# The trained AVM artifact. In a fuller setup this is pulled from object
+# storage on boot; for the free tier we bake the current model into the
+# image so the replica is self-contained.
+COPY models/saved/avm/ ./models/saved/avm/
+
+EXPOSE 8000
+
+# Render provides $PORT; default to 8000 locally. Run migrations then serve.
+CMD alembic upgrade head && \
+    uvicorn api_layer.main:app --host 0.0.0.0 --port ${PORT:-8000}

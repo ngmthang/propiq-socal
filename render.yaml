@@ -1,0 +1,32 @@
+# PropIQ - Render deployment (free tier)
+# API only. Frontend -> Vercel, Postgres -> Neon (set DATABASE_URL below).
+# Free web services sleep after 15 min idle (~30-50s cold start) - documented
+# tradeoff for a portfolio demo. Upgrading to always-on = change `plan`, no
+# code change.
+services:
+  - type: web
+    name: propiq-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile.api.prod
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: SERVING_ONLY
+        value: "true"
+      - key: DEBUG
+        value: "false"
+      # --- SET THESE IN THE RENDER DASHBOARD (do NOT commit real values) ---
+      - key: DATABASE_URL
+        sync: false          # paste your Neon connection string
+      - key: JWT_SECRET_KEY
+        generateValue: true  # Render generates a strong secret
+      - key: API_KEYS
+        sync: false          # your own comma-separated key(s)
+      - key: CORS_ORIGINS
+        sync: false          # https://your-app.vercel.app
+      - key: ANTHROPIC_API_KEY
+        sync: false          # optional - enables AI deal analysis
+      - key: ENABLE_ML_SCHEDULER
+        value: "false"       # the API replica must not run training

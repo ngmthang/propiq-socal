@@ -1,0 +1,37 @@
+# PropIQ - API serving requirements (torch-free, stateless replica)
+# The request-serving API loads only the XGBoost AVM. torch (LSTM training)
+# and scraping libs live with the worker, not here - this keeps the image
+# small enough for free-tier RAM (~512MB) and horizontally scalable.
+
+# Core
+numpy>=1.26.0
+pandas>=2.2.0
+scipy>=1.12.0
+python-dotenv>=1.0.0
+loguru>=0.7.0
+tenacity>=8.2.0
+
+# Database
+sqlalchemy>=2.0.0
+psycopg2-binary>=2.9.0
+alembic>=1.13.0
+
+# ML serving (NO torch - AVM is XGBoost only)
+xgboost>=2.0.0
+scikit-learn>=1.4.0
+joblib>=1.3.0
+shap>=0.45.0
+
+# LLM / AI deal analysis (lightweight HTTP client)
+anthropic>=0.25.0
+
+# API layer
+fastapi>=0.110.0
+uvicorn[standard]>=0.28.0
+pydantic>=2.9.0
+pydantic-settings>=2.2.0
+bcrypt>=4.1.0
+pyjwt>=2.8.0
+email-validator>=2.1.0
+slowapi>=0.1.9
+sentry-sdk[fastapi]>=2.0.0
