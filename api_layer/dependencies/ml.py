@@ -14,7 +14,6 @@ from loguru import logger
 from fastapi import Request
 
 from ml_layer.inference.engine import InferenceEngine
-from ml_layer.training.scheduler import MLScheduler
 from ..core.config import settings
 
 class MLState:
@@ -22,7 +21,7 @@ class MLState:
 
     def __init__(self) -> None:
         self.engine: InferenceEngine | None = None
-        self.scheduler: MLScheduler | None = None
+        self.scheduler: "MLScheduler | None" = None
 
     def load(self) -> None:
         logger.info("Loading InferenceEngine (AVM + LSTM + DealAnalyzer)...")
@@ -35,7 +34,9 @@ class MLState:
         logger.info("InferenceEngine ready.")
 
         if settings.ENABLE_ML_SCHEDULER:
+            from ml_layer.training.scheduler import MLScheduler
             logger.info("Starting MLScheduler (retrain jobs)...")
+
             self.scheduler = MLScheduler(
                 db_url=settings.DATABASE_URL,
                 avm_cron=settings.AVM_RETRAIN_CRON,
