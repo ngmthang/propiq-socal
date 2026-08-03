@@ -90,8 +90,11 @@ def upsert_parcel(session, data: dict, owner_id: int) -> str:
         # field we don't have new data for.
         for field in ('address', 'city', 'zip_code', 'county', 'latitude',
                       'longitude', 'year_built', 'bedrooms', 'units'):
-            if data.get(field) is not None:
-                setattr(prop, field, data[field])
+            val = data.get(field)
+            # don't overwrite a stored value with None, and don't clobber a
+            # real address with a blank one (county blanks are common)
+            if val is not None and not (field == 'address' and val == ''):
+                setattr(prop, field, val)
 
         if zoning is not None:
             prop.zoning = zoning
@@ -102,12 +105,12 @@ def upsert_parcel(session, data: dict, owner_id: int) -> str:
         prop.updated_at = datetime.utcnow()
         return 'updated'
 
-    if not data.get('address') or not data.get('zip_code'):
-        return 'skipped'  # not enough to satisfy NOT NULL columns
+    if not data.get('zip_code'):
+        return 'skipped'
 
     prop = Property(
         owner_id=owner_id,
-        address=data['address'],
+        address=(data.get('address') or ''),
         city=data.get('city', ''),
         state=data.get('state', 'CA'),
         zip_code=data['zip_code'],

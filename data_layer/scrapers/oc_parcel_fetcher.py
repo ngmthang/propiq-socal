@@ -269,6 +269,7 @@ class OcParcelFetcher(BaseScraper):
                     'outFields': ','.join(OC_PARCEL_FIELDS),
                     'returnGeometry': 'true',
                     'outSR': 4326,
+                    'orderByFields': 'OBJECTID',
                     'resultOffset': offset,
                     'resultRecordCount': OC_SERVER_MAX_RECORDS,
                     'f': 'json',
