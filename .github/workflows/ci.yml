@@ -215,3 +215,40 @@ jobs:
           )
           print("OK: models and migrations are in sync")
           EOF
+
+  data-quality:
+    name: Data quality gate
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: propiq
+          POSTGRES_PASSWORD: propiq
+          POSTGRES_DB: propiq
+        ports: [ "5432:5432" ]
+        options: >-
+          --health-cmd "pg_isready -U propiq -d propiq"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://propiq:propiq@localhost:5432/propiq
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - name: Install deps (no torch)
+        run: |
+          grep -v "^torch" requirements.txt > /tmp/reqs.txt
+          pip install -r /tmp/reqs.txt
+      - name: Create schema
+        run: alembic upgrade head
+      - name: Seed corpus
+        run: |
+          python -m data_layer.seeds.seed_avm_data --count 1000
+          python -m data_layer.seeds.seed_market_history
+      - name: Run data quality gate
+        run: python scripts/data_quality_check.py

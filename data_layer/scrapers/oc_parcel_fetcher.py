@@ -146,6 +146,7 @@ class OcParcelFetcher(BaseScraper):
                 logger.info(f'[oc_parcels] zip={zip_code} - {len(zoning_polys)} county zoning polygons overlap')
 
             kept = 0
+            skipped_junk = 0
             for feature in candidates:
                 geom = feature.get('geometry') or {}
                 parcel_rings = geom.get('rings')
@@ -159,6 +160,12 @@ class OcParcelFetcher(BaseScraper):
                     continue  # centroid falls outside this zip's real boundary
 
                 attrs = dict(feature.get('attributes', {}))
+
+                apn = (attrs.get('ASSESSMENT_NO') or '').strip()
+                if not apn or set(apn) <= set('0-'):
+                    skipped_junk += 1
+                    continue
+
                 attrs['_zip_code'] = zip_code
                 attrs['_city'] = city
                 attrs['_latitude'] = cy
@@ -167,7 +174,8 @@ class OcParcelFetcher(BaseScraper):
                 all_parcels.append(attrs)
                 kept += 1
 
-            logger.info(f'[oc_parcels] zip={zip_code} ({city}) - {kept} parcels matched after zip-boundary filter')
+            logger.info(f'[oc_parcels] zip={zip_code} ({city}) - {kept} parcels matched after '
+                        f'zip-boundary filter ({skipped_junk} junk/placeholder APNs skipped)')
 
         return all_parcels
 
