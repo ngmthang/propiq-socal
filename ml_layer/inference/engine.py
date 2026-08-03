@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import os
 import numpy as np
 import pandas as pd
 import shap
@@ -98,15 +99,22 @@ class InferenceEngine:
         # therefore all valuation endpoints too) failing to load just
         # because forecasting isn't trained yet.
         lstm = None
-        try:
-            from ..training.lstm_trainer import LSTMTrainer
-            lstm = LSTMTrainer.load(lstm_path)
-        except Exception as e:
-            logger.warning(
-                f"LSTM model not available ({e}). "
-                "Forecast/analysis endpoints will return a neutral placeholder "
-                "forecast until an LSTM model is trained and torch is working."
+        serving_only = os.getenv("SERVING_ONLY", "false").lower() in ("1", "true", "yes")
+        if serving_only:
+            logger.info(
+                "SERVING_ONLY set - skipping LSTM/torch load. This replica serves "
+                "AVM valuations only; forecasts come from the training worker."
             )
+        else:
+            try:
+                from ..training.lstm_trainer import LSTMTrainer
+                lstm = LSTMTrainer.load(lstm_path)
+            except Exception as e:
+                logger.warning(
+                    f"LSTM model not available ({e}). "
+                    "Forecast/analysis endpoints will return a neutral placeholder "
+                    "forecast until an LSTM model is trained and torch is working."
+                )
 
         analyzer = None
         if enable_ai:

@@ -58,6 +58,8 @@ class Settings(BaseSettings):
     # CORS
     CORS_ORIGINS: str = "*"
 
+    SERVING_ONLY: bool = False
+
     @property
     def api_keys_set(self) -> set[str]:
         return {k.strip() for k in self.API_KEYS.split(",") if k.strip()}
@@ -68,6 +70,32 @@ class Settings(BaseSettings):
             return ["*"]
         return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
 
+    @property
+    def is_production(self) -> bool:
+        return self.ENVIRONMENT.lower() == "production"
+
+    def assert_production_ready(self) -> None:
+        """Fail loudly at startup if deployed to production with insecure
+        defaults. A silent insecure deploy is far worse than a crash - this
+        turns 'forgot to set the secret' from a vulnerability into an
+        obvious boot error."""
+        if not self.is_production:
+            return
+        problems = []
+        if self.JWT_SECRET_KEY == "insecure-dev-secret-change-me-in-production":
+            problems.append("JWT_SECRET_KEY is still the insecure default")
+        if "propiq-dev-key-change-me" in self.api_keys_set:
+            problems.append("API_KEYS still contains the dev default key")
+        if self.CORS_ORIGINS.strip() == "*":
+            problems.append("CORS_ORIGINS is '*' - lock it to your frontend domain")
+        if self.DEBUG:
+            problems.append("DEBUG is true in production")
+        if problems:
+            raise RuntimeError(
+                "Refusing to start in production with insecure config:\n  - "
+                + "\n  - ".join(problems)
+                + "\nSet these as environment variables in your host."
+            )
 
 @lru_cache
 def get_settings() -> Settings:

@@ -53,6 +53,8 @@ async def lifespan(app: FastAPI):
     """Startup: load ML models + start scheduler. Shutdown: clear teardown."""
     logger.info(f"Starting {settings.APP_NAME} v{settings.APP_VERSION} [{settings.ENVIRONMENT}]")
 
+    settings.assert_production_ready()
+
     ml_state = MLState()
     app.state.ml = ml_state
 
