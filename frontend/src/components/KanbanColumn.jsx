@@ -25,7 +25,7 @@ export default function KanbanColumn({id, title, tasks}) {
           >
               <div className="flex flex-1 flex-col gap-2">
                   {tasks.map((task) => (
-                      <KanbanColumn key={task.id} task={task} />
+                      <KanbanCard key={task.id} task={task} />
                   ))}
               </div>
           </SortableContext>
