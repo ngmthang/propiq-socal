@@ -2,7 +2,10 @@
 
 [![CI](https://github.com/ngmthang/propiq-socal/actions/workflows/ci.yml/badge.svg)](https://github.com/ngmthang/propiq-socal/actions/workflows/ci.yml)
 
-A full-stack platform for analyzing Southern California real estate: **442,000+ real
+**🔗 Live demo: [propiqsocal.vercel.app](https://propiqsocal.vercel.app)**
+*(Free-tier hosted — the API sleeps when idle, so the first request after a pause takes ~30–50s to wake. Deployed across Vercel + Render + Neon.)*
+
+A full-stack platform for analyzing Southern California real estate: **470,000+ real
 Orange County parcels** ingested from public county GIS, ML-powered valuations with
 SHAP explainability, LSTM market forecasting, and Claude-powered deal analysis —
 behind a FastAPI backend and a React dashboard.
@@ -23,13 +26,17 @@ Four layers, each independently testable:
 
 ## The data (and what's real vs. synthetic)
 
-- **Real:** 442k Orange County parcels from OC Public Works' public ArcGIS layers —
+- **Real:** 470k Orange County parcels from OC Public Works' public ArcGIS layers —
   APNs, site addresses, coordinates, year built, bedrooms, per-parcel unit counts
   (derived from shared-APN analysis of condo/townhome developments), and county
   zoning where published. Zip assignment is done by point-in-polygon against US
   Census TIGERweb ZCTA boundaries; zoning by spatial join against the county
   zoning layer, with `UNKNOWN` where the data honestly doesn't exist (city-zoned
-  parcels aren't in the county layer).
+  parcels aren't in the county layer). Ingestion is verified for **completeness**,
+  not just correctness: a script reconciles stored counts against the county's own
+  polygon counts, which caught a blank-address skip that had silently dropped
+  ~28,600 valid parcels (up to a third of some dense zips) — a defect invisible to
+  every correctness check because the data that *was* stored was accurate.
 - **Synthetic:** sale prices and valuations. California does not publicly disclose
   real transaction prices, so ML training uses a generated corpus of ~4,000 sold
   properties whose prices derive from a hidden `intrinsic_value` — with sale price
@@ -69,6 +76,24 @@ docker compose restart api
 cd frontend && npm ci && npm run dev  # http://localhost:5173
 ```
 
+## Deployment
+
+Deployed 100% free, with an architecture that scales by changing plans, not code:
+
+- **Frontend → Vercel** (static Vite build, CDN)
+- **API → Render** (Docker, free tier). The serving image is **torch-free**: the
+  request-serving process loads only the XGBoost AVM, never PyTorch, so it fits in
+  512MB and can run as N identical stateless replicas. `SERVING_ONLY=true` enforces
+  the boundary — the LSTM/training code and its heavy deps are never imported.
+- **Postgres → Neon** (serverless, free tier). All 470k parcels fit in ~193MB by
+  excluding the re-processing `raw_data` JSON blob at migration time.
+
+Training and serving are separate lifecycles (the `docker-compose` split was
+designed that way from day one): the API serves precomputed model artifacts; the
+worker owns retraining. Scaling to real traffic is a host/plan upgrade, not a
+rewrite — the stateless-API boundary is the load-bearing decision that makes that
+true.
+
 ## CI
 
 Four jobs on every push (`.github/workflows/ci.yml`):
@@ -81,6 +106,10 @@ Four jobs on every push (`.github/workflows/ci.yml`):
 3. **Frontend build** — Vite production build
 4. **Migration drift check** — upgrades an empty DB to head, then asserts an
    autogenerate diff against the models comes back empty
+5. **Data quality gate** — seeds a real Postgres, asserts the invariants that must
+   always hold (leakage-free seed corpus, no junk-APN rows, referential integrity)
+6. **Unit tests** — pytest suite; notably a regression test for the blank-address
+   parcel-loss bug, so it can never silently return
 
 Every assertion encodes a bug that actually shipped once.
 
