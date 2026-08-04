@@ -26,9 +26,9 @@ from ..schemas.properties import (
     ValuationResponse,
     ForecastResponse,
     DealAnalysisResponse,
-    FullAnalysisResponse
+    FullAnalysisResponse,
+    RecommendationOut,
 )
-
 router = APIRouter(
     prefix="/api/properties",
     tags=["properties"],
@@ -148,6 +148,7 @@ def get_analysis(
         forecast=forecast,
         deal_score=full.deal_score,
         deal_analysis=deal_analysis,
+        recommendations=[RecommendationOut(**r) for r in full.recommendations],
         computed_at=full.computed_at,
     )
 

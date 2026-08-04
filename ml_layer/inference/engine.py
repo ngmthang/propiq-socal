@@ -18,9 +18,9 @@ import pandas as pd
 import shap
 
 from typing import Optional
-from dataclasses import dataclass, field
 from datetime import datetime
 from loguru import logger
+from dataclasses import dataclass, field, asdict
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -79,14 +79,27 @@ class FullPropertyAnalysis:
     deal_analysis: Optional[DealAnalysis] = None
     computed_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
 
+# FullPropertyAnalysis - add one field
+@dataclass
+class FullPropertyAnalysis:
+    property_id: str
+    valuation: ValuationResult
+    forecast: ForecastResult
+    deal_score: int
+    deal_analysis: Optional[DealAnalysis] = None
+    recommendations: list[dict] = field(default_factory=list)
+    computed_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+
 class InferenceEngine:
     AVM_VERSION = "avm_v1"
     LSTM_VERSION = "lstm_v1"
 
-    def __init__(self, avm: AVMTrainer, lstm: Optional[LSTMTrainer] = None, analyzer: Optional[DealAnalyzer] = None):
+    def __init__(self, avm: AVMTrainer, lstm: Optional[LSTMTrainer] = None, analyzer: Optional[DealAnalyzer] = None,
+                 recommender: Optional["ImprovementRecommender"] = None):
         self.avm = avm
         self.lstm = lstm
         self.analyzer = analyzer
+        self.recommender = recommender
         self.builder = FeatureBuilder()
 
     @classmethod
@@ -123,7 +136,10 @@ class InferenceEngine:
             except ValueError as e:
                 logger.warning(f"{e} Continuing without AI deal analysis.")
 
-        return cls(avm, lstm, analyzer)
+        engine = cls(avm, lstm, analyzer)
+        from .improvement_recommender import ImprovementRecommender
+        engine.recommender = ImprovementRecommender(engine)
+        return engine
 
     @staticmethod
     def _as_dict(property_row) -> dict:
@@ -160,7 +176,7 @@ class InferenceEngine:
         list_price = property_row.get('list_price')
         return ValuationResult(
             property_id = str(property_row.get('id', 'unknown')),
-            estimated_value = round(pred, -2),
+            estimated_value = round(float(pred), -2),
             confidence = round(max(0.0, 1.0 - ci_pct * 1.5), 2),
             price_range_lo = round(pred * (1 - ci_pct), -2),
             price_range_hi = round(pred * (1 + ci_pct), -2),
@@ -214,7 +230,9 @@ class InferenceEngine:
         )
 
     def analyze_property(self, property_row, market_history_df: Optional[pd.DataFrame] = None,
-                         comparables: Optional[list[dict]] = None, include_ai: bool = True) -> FullPropertyAnalysis:
+                         comparables: Optional[list[dict]] = None, include_ai: bool = True,
+                         include_recommendations: bool = True) -> FullPropertyAnalysis:
+        orig = property_row
         property_row = self._as_dict(property_row)
         val = self.valuate(property_row)
         forecast = self.forecast(property_row.get("zip_code", ""), market_history_df)
@@ -227,12 +245,24 @@ class InferenceEngine:
             except Exception as e:
                 logger.warning(f"AI analysis failed, continuing without it: {e}")
 
+        recommendations = []
+        # recommender needs the ORM row (prop.features/.neighborhood/.pool/
+        # .garage_spaces relationships) - a plain dict (e.g. from
+        # ml_layer.utils.db) can't supply those, so it's skipped rather than guessed.
+        if include_recommendations and self.recommender and not isinstance(orig, dict):
+            try:
+                recommendations = [asdict(r) for r in self.recommender.recommend(orig)]
+            except Exception as e:
+                logger.warning(f"Recommendation engine failed, continuing without it: {e}")
+
         return FullPropertyAnalysis(
-            property_id = str(property_row.get('id', 'unknown')),
-            valuation = val,
-            forecast = forecast,
-            deal_score = deal_analysis.deal_score if deal_analysis else self._heuristic_score(val, forecast, property_row),
-            deal_analysis = deal_analysis,
+            property_id=str(property_row.get('id', 'unknown')),
+            valuation=val,
+            forecast=forecast,
+            deal_score=deal_analysis.deal_score if deal_analysis else self._heuristic_score(val, forecast,
+                                                                                            property_row),
+            deal_analysis=deal_analysis,
+            recommendations=recommendations,
         )
 
     def _build_context(self, row: dict, val: ValuationResult,

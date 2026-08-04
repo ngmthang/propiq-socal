@@ -74,6 +74,7 @@ class FullAnalysisResponse(BaseModel):
     forecast: ForecastResponse
     deal_score: int = Field(..., ge=0, le=100)
     deal_analysis: DealAnalysisResponse | None = None
+    recommendations: list[RecommendationOut] = []
     computed_at: str
 
 # Search
@@ -90,3 +91,15 @@ class SearchResponse(BaseModel):
     page: int
     page_size: int
     has_next: bool
+
+class RecommendationOut(BaseModel):
+    type: str
+    title: str
+    rationale: str
+    feasible: bool
+    feasibility_reason: str
+    est_cost: float | None = None
+    value_lift_pct: float | None = None
+    confidence: float = 0.0
+    method: str | None = None
+    caveat: str | None = None

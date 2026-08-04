@@ -8,7 +8,8 @@ const currency = (n) =>
     }).format(n);
 
 export default function RecommendationCard({rec, onAddToProject}) {
-    const {title, rationale, est_cost: cost, value_lift_pct: lift, confidence} = rec;
+    const {title, rationale, est_cost: cost, value_lift_pct: lift, confidence, method, caveat} = rec;
+    const isModeled = method === "avm_diff";
 
     return (
         <div className="panel flex flex-col gap-3 p-4">
@@ -20,6 +21,12 @@ export default function RecommendationCard({rec, onAddToProject}) {
             </div>
 
             <p className="text-sm leading-relaxed text-ink/65">{rationale}</p>
+
+            {!isModeled && (
+                <p className="text-xs text-ink/40" title={caveat}>
+                    Rule-of-thumb estimate, not AVM-modeled
+                </p>
+            )}
 
             <div className="mt-1 flex items-center justify-between border-t border-line pt-3">
                 <div className="flex gap-4 font-mono text-xs text-ink/50">
