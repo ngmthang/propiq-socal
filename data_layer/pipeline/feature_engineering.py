@@ -45,7 +45,7 @@ class FeatureEngineer:
 
     def compute_for_property(self, session: Session, prop: Property):
         """Build a PropertyFeature row for one property."""
-        neighborhood = self._get_neighboorhood(session, prop.zip_code)
+        neighborhood = self._get_neighborhood(session, prop.zip_code)
         feature = PropertyFeature(
             property_id = prop.id,
 
@@ -96,7 +96,6 @@ class FeatureEngineer:
             return round(prop.estimated_value / prop.building_sqft, 2)
         return None
 
-    @staticmethod
     def _fetch_walk_score(self, prop: Property, score_type: str) -> int | None:
         """
         Calls walkscore.com API.
@@ -136,7 +135,7 @@ class FeatureEngineer:
         residential lots are now ADU-eligible. Basic heuristics
         """
         if prop.property_type and \
-           prop.property_type.value in ('single-family', 'multi-family', 'condo'):
+                prop.property_type.value in ('single_family', 'multi_family', 'condo'):
             if prop.lot_size_sqft and prop.lot_size_sqft >= 1200:
                 return True
         return False
