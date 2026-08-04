@@ -15,6 +15,7 @@ const currency = (n) =>
         }).format(n);
 
 export default function PropertyDetail() {
+    const { id } = useParams();
     const [property, setProperty] = useState(null);
     const [valuation, setValuation] = useState(null);
     const [analysis, setAnalysis] = useState(null);
