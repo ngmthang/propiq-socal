@@ -7,9 +7,9 @@
 """
 
 from datetime import datetime
-from sqlalchemy import(
+from sqlalchemy import (
     create_engine, Column, Integer, Float, String, Text,
-    Boolean, DateTime, ForeignKey, JSON, Enum, Index
+    Boolean, DateTime, ForeignKey, JSON, Enum, Index, select
 )
 from sqlalchemy.orm import declarative_base, relationship, Session
 from sqlalchemy.ext.hybrid import hybrid_property
@@ -205,6 +205,30 @@ class Property(Base):
     @hybrid_property
     def last_sold_date(self):
         return self.last_sale_date
+
+    @hybrid_property
+    def development_score(self):
+        return self.features.development_score if self.features else None
+
+    @development_score.expression
+    def development_score(cls):
+        return (
+            select(PropertyFeature.development_score)
+            .where(PropertyFeature.property_id == cls.id)
+            .scalar_subquery()
+        )
+
+    @hybrid_property
+    def adu_eligible(self):
+        return self.features.adu_eligible if self.features else None
+
+    @adu_eligible.expression
+    def adu_eligible(cls):
+        return (
+            select(PropertyFeature.adu_eligible)
+            .where(PropertyFeature.property_id == cls.id)
+            .scalar_subquery()
+        )
 
     @last_sold_date.expression
     def last_sold_date(cls):
