@@ -22,6 +22,8 @@ RUN pip install --upgrade pip && pip install -r requirements.txt
 COPY data_layer/ ./data_layer/
 COPY ml_layer/ ./ml_layer/
 COPY api_layer/ ./api_layer/
+COPY alembic.ini .
+COPY migrations/ ./migrations/
 
 # Trained model artifacts (mounted as a volume in compose for hot-swaps;
 # copied here too so the image is runnable standalone).

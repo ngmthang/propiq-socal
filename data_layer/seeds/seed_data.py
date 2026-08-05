@@ -13,17 +13,24 @@
 
 from __future__ import annotations
 
+import os
 import random
 from datetime import datetime, timedelta
+from pathlib import Path
+from alembic.config import Config
+from alembic import command
 
 from data_layer.models.database import (
-    get_engine, get_session, create_tables,
+    get_engine, get_session,
     User, Property, PropertyFeature, PriceHistory, PropertyValuation,
     Neighborhood, MarketTrend, Project, Task, Milestone,
     PropertyType, ZoningType, ProjectStatus, TaskStatus, UserRole,
 )
 
-DATABASE_URL = "postgresql://propiq:propiq@localhost:5433/propiq"
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql://propiq:propiq@localhost:5433/propiq",  # local Docker Postgres default
+)
 
 # zip_code -> (city, county, lat, lng, base $/sqft, neighborhood name)
 AREAS = {
@@ -212,10 +219,18 @@ def make_market_trends(months: int = 24) -> list[MarketTrend]:
             ))
     return result
 
+def run_migrations():
+    """Ensure the DB is on the latest schema via Alembic, instead of
+    creating tables directly from current models (which bypasses
+    migration history and never sets alembic_version)."""
+    repo_root = Path(__file__).resolve().parents[2]  # data_layer/seeds/ -> repo root
+    alembic_cfg = Config(str(repo_root / "alembic.ini"))
+    alembic_cfg.set_main_option("script_location", str(repo_root / "migrations"))
+    command.upgrade(alembic_cfg, "head")
 
 def run():
     engine = get_engine(DATABASE_URL)
-    create_tables(engine)  # no-op if tables already exist
+    run_migrations()
     session = get_session(engine)
 
     try:

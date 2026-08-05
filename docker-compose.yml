@@ -46,6 +46,8 @@ services:
       - ./api_layer:/app/api_layer
       - ./data_layer:/app/data_layer
       - ./ml_layer:/app/ml_layer
+      - ./alembic.ini:/app/alembic.ini
+      - ./migrations:/app/migrations
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
       interval: 15s
