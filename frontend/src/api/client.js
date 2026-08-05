@@ -46,6 +46,7 @@ export const marketApi = {
 export const projectsApi = {
     list: () => client.get("/projects"),
     update: (id, payload) => client.patch(`/projects/${id}`, payload),
+    createFromRecommendation: (payload) => client.post("/projects", payload),
 };
 
 export default client;

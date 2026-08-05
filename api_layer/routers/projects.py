@@ -16,11 +16,12 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session, joinedload
 
-from data_layer.models.database import Task, Project, TaskStatus
+from data_layer.models.database import Task, Project, TaskStatus, Property, User, ProjectStatus
+from ..schemas.projects import TaskOut, TaskStatusUpdate, TaskCreateFromRecommendation, FRONTEND_STATUSES
 
 from ..core.auth import get_current_user
 from ..core.db import get_db
-from ..schemas.projects import TaskOut, TaskStatusUpdate, FRONTEND_STATUSES
+
 
 router = APIRouter(
     prefix="/api/projects",
@@ -97,4 +98,69 @@ def update_task_status(
     task.status = _FRONTEND_TO_DB[payload.status]
     db.commit()
     db.refresh(task)
+    return _to_task_out(task)
+
+@router.post("", response_model=TaskOut, status_code=status.HTTP_201_CREATED)
+def create_task_from_recommendation(
+        payload: TaskCreateFromRecommendation,
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user),
+) -> TaskOut:
+    """
+    'Add to project' from a RecommendationCard: find-or-create a Project
+    for this property, then add a Task under it representing the
+    recommended improvement. Kept as a single POST /api/projects (not a
+    separate /from-recommendation path) since that's the only creation
+    flow this API has right now - matches the router's existing habit of
+    keeping the frontend contract at one predictable prefix.
+    """
+    prop = db.query(Property).filter(Property.id == payload.property_id).first()
+    if prop is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Property not found: {payload.property_id}",
+        )
+
+    project = db.query(Project).filter(Project.property_id == payload.property_id).first()
+    if project is None:
+        project = Project(
+            property_id=payload.property_id,
+            manager_id=current_user.id,
+            title=f"{prop.address} improvements",
+            description="Auto-created from a recommended improvement.",
+            status=ProjectStatus.PLANNING,
+            project_type="improvement",
+            estimated_value_add=payload.value_lift_pct,
+        )
+        db.add(project)
+        db.flush()  # get project.id without a separate round trip
+
+    desc_parts = [payload.rationale]
+    if payload.est_cost is not None:
+        desc_parts.append(f"Est. cost: ${payload.est_cost:,.0f}")
+    if payload.value_lift_pct is not None:
+        desc_parts.append(f"Est. value lift: {payload.value_lift_pct:.1f}%")
+    if payload.method == "rule_of_thumb":
+        desc_parts.append("(Rule-of-thumb estimate, not AVM-modeled)")
+
+    task = Task(
+        project_id=project.id,
+        title=payload.title,
+        description=" · ".join(desc_parts),
+        status=TaskStatus.TODO,
+        priority=2,
+        tags=[payload.rec_type],
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    # Reload with the same eager-loading the GET endpoint uses, so
+    # _to_task_out's task.project.property access doesn't trigger a
+    # lazy-load outside the session.
+    task = (
+        db.query(Task)
+        .options(joinedload(Task.project).joinedload(Project.property), joinedload(Task.assignee))
+        .filter(Task.id == task.id)
+        .first()
+    )
     return _to_task_out(task)

@@ -1,6 +1,7 @@
 import {useEffect, useState} from "react";
 import {useParams, Link} from "react-router-dom";
 import {propertiesApi} from "../api/client.js";
+import {projectsApi} from "../api/client.js";
 import DeltaChip from "../components/DeltaChip.jsx";
 import ValueTrendChart from "../components/ValueTrendChart.jsx";
 import RecommendationCard from "../components/RecommendationCard.jsx";
@@ -24,6 +25,24 @@ export default function PropertyDetail() {
     const [valuationUnavailable, setValuationUnavailable] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
+
+    const handleAddToProject = async (rec) => {
+        try {
+            await projectsApi.createFromRecommendation({
+                property_id: property.id,
+                rec_type: rec.type,
+                title: rec.title,
+                rationale: rec.rationale,
+                est_cost: rec.est_cost,
+                value_lift_pct: rec.value_lift_pct,
+                method: rec.method,
+            });
+            // TODO: real toast/feedback - alert() as a placeholder only
+            alert(`Added "${rec.title}" to your project board.`);
+        } catch (err) {
+            alert("Couldn't add to project - please try again.");
+        }
+    };
 
     useEffect(() => {
         let cancelled = false;
@@ -175,7 +194,7 @@ export default function PropertyDetail() {
                 </h2>
                 <div className="grid grid-cols-2 gap-4">
                     {(analysis?.recommendations ?? []).map((rec, i) => (
-                        <RecommendationCard key={i} rec={rec}/>
+                        <RecommendationCard key={i} rec={rec} onAddToProject={handleAddToProject}/>
                     ))}
                     {(!analysis?.recommendations || analysis.recommendations.length === 0) && (
                         <p className="text-sm text-ink/45">

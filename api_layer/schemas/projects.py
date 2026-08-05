@@ -20,3 +20,12 @@ class TaskOut(BaseModel):
 
 class TaskStatusUpdate(BaseModel):
     status: str
+
+class TaskCreateFromRecommendation(BaseModel):
+    property_id: int
+    rec_type: str
+    title: str
+    rationale: str
+    est_cost: float | None = None
+    value_lift_pct: float | None = None
+    method: str | None = None
