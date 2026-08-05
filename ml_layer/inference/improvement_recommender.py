@@ -130,6 +130,7 @@ class ImprovementRecommender:
                 "school_rating": feat.school_rating,
                 "development_score": feat.development_score,
                 "adu_eligible": int(bool(feat.adu_eligible)),
+                "far_ratio": feat.far_ratio,
             })
 
         if nb is not None:

@@ -1,13 +1,5 @@
-"""
-    PropIQ - Redfin Scraper
-    Uses Redfin's unofficial CSV download endpoint (no API key needed).
-    Works well for bulk SoCal data.
-
-    @author Minh Thang Nguyen
-    @version June 20. 2026
-"""
-
 import csv
+import json
 import logging
 from data_layer.scrapers.base_scraper import BaseScraper, ScraperConfig
 
@@ -19,22 +11,60 @@ class RedfinScraper(BaseScraper):
     This is stable and commonly used for real estate datasets.
     """
 
-    REDFIN_REGION_IDS = {
-        # SoCal markets -> Redfin region IDs
-        'Los Angeles County': '1',
-        'Orange County': '2',
-        'San Diego County': '3',
-        'Riverside County': '4',
-        'San Bernardino County': '5',
-    }
-
     def __init__(self):
         config = ScraperConfig(
             source_name='redfin',
-            base_url='https://www.redfin.com/',
+            base_url='https://www.redfin.com',  # no trailing slash - avoids the // bug
             requests_per_minute=5, # be polite with undocumented API
         )
         super().__init__(config)
+        self._region_cache: dict[str, tuple[str, str] | None] = {}  # zip -> (region_id, region_type)
+
+    # Region lookup
+    def _resolve_region(self, zip_code: str) -> tuple[str, str] | None:
+        """
+        Redfin's CSV endpoint needs an internal region_id + region_type,
+        not a zip code directly. Resolve it via the same autocomplete
+        endpoint redfin.com's own search box uses. Cached per scraper
+        instance since the same zip is looked up on every call otherwise.
+        """
+        if zip_code in self._region_cache:
+            return self._region_cache[zip_code]
+
+        resp = self.get(
+            f'{self.config.base_url}/stingray/do/location-autocomplete',
+            params={'location': zip_code, 'start': 0, 'count': 10, 'v': 2}
+        )
+        if not resp:
+            self._region_cache[zip_code] = None
+            return None
+
+        try:
+            # Same "{}&&<json>" prefix quirk as the CSV endpoint.
+            raw = resp.text
+            payload = json.loads(raw.split('&&', 1)[1] if '&&' in raw else raw)
+            rows = [
+                row
+                for section in payload.get('payload', {}).get('sections', [])
+                for row in section.get('rows', [])
+            ]
+            # Prefer an exact zip-code-type match; Redfin's zip rows carry
+            # the literal zip in 'name' and an id shaped '<region_type>_<region_id>'.
+            match = next((r for r in rows if r.get('name', '').strip() == zip_code), None) \
+                    or (rows[0] if rows else None)
+            if not match or '_' not in str(match.get('id', '')):
+                logger.warning(f'[redfin] no region match for zip {zip_code} - response shape: {list(payload.keys())}')
+                self._region_cache[zip_code] = None
+                return None
+
+            region_type, region_id = str(match['id']).split('_', 1)
+            self._region_cache[zip_code] = (region_id, region_type)
+            return region_id, region_type
+
+        except Exception as e:
+            logger.warning(f'[redfin] region lookup failed for zip {zip_code}: {e}')
+            self._region_cache[zip_code] = None
+            return None
 
     # Fetch
     def fetch_listings(self, zip_codes: list[str]) -> list[dict]:
@@ -46,28 +76,39 @@ class RedfinScraper(BaseScraper):
         return all_listings
 
     def _fetch_zip(self, zip_code: str) -> list[dict]:
+        region = self._resolve_region(zip_code)
+        if region is None:
+            logger.warning(f'[redfin] skipping zip {zip_code} - could not resolve region_id')
+            return []
+        region_id, region_type = region
+
         resp = self.get(
             f'{self.config.base_url}/stingray/api/gis-csv',
             params={
                 'al': 1,
                 'market': 'losangeles',
                 'num_homes': 350,
-                'region_id': zip_code,
-                'region_type': 2,
+                'region_id': region_id,
+                'region_type': region_type,
                 'sold_within_days': 365,
                 'status': 9,
-                'uipt': '1, 2, 3, 4, 6', # SF, condo, TH, MF, land
+                'uipt': '1,2,3,4,6', # SF, condo, TH, MF, land - no spaces, Redfin rejects them
                 'v': 8,
             }
         )
         if not resp:
             return []
 
-        # Redfin returns CSV with a 1-line disclaimer header
         content = resp.text
         lines = content.split('\n')
-        # Skip the 'REMARKS: ...' header line
-        csv_start = next((i for i,l in enumerate(lines) if l.startswith('ADDRESS')), 1)
+        # First real header line starts with "SALE TYPE" (Redfin's actual
+        # first CSV column) - previous check for a line starting with
+        # 'ADDRESS' never matched anything, silently defaulting to line 1
+        # (the disclaimer line) and feeding that to DictReader as headers.
+        csv_start = next((i for i, l in enumerate(lines) if l.startswith('SALE TYPE')), None)
+        if csv_start is None:
+            logger.warning(f'[redfin] zip={zip_code} - no CSV header row found in response')
+            return []
         reader = csv.DictReader(lines[csv_start:])
         return list(reader)
 
@@ -75,24 +116,20 @@ class RedfinScraper(BaseScraper):
     def parse_listing(self, raw: dict) -> dict:
         def safe_float(v):
             try:
-                return float(str(v)
-                             .replace(',' , '')
-                             .replace('$', '')) if v else None
-            except:
+                return float(str(v).replace(',', '').replace('$', '')) if v else None
+            except Exception:
                 return None
 
         def safe_int(v):
             try:
-                return int(str(v).replace(',' , '')) if v else None
-            except:
+                return int(str(v).replace(',', '')) if v else None
+            except Exception:
                 return None
 
         return {
             'source': 'redfin',
             'source_id': raw.get('MLS#', ""),
-            'source_url': raw.get(
-                'URL (SEE https://www.redfin.com/buy-a-home/comparative-market-analysis FOR INFO ON PRICING)',
-                ''),
+            'source_url': raw.get('URL', ''),
 
             'address': raw.get('ADDRESS', ''),
             'city': raw.get('CITY', ''),
@@ -111,7 +148,7 @@ class RedfinScraper(BaseScraper):
             'estimated_value': safe_float(raw.get('PRICE')),
             'price_per_sqft': safe_float(raw.get('$/SQUARE FEET')),
             'last_sale_price': safe_float(raw.get('SOLD PRICE')),
-            'last_sale_date': raw.get('SOLd DATE'),
+            'last_sale_date': raw.get('SOLD DATE'),  # was 'SOLd DATE' - typo, wrong case
 
             'raw_data': dict(raw),
         }
@@ -123,97 +160,10 @@ class RedfinScraper(BaseScraper):
             'Townhouse': 'townhouse',
             'Multi-Family (2-4 Unit)': 'multi_family',
             'Multi-Family (5+ Unit)': 'multi_family',
-            'Vacat Land': 'vacant_land',
+            'Vacant Land': 'vacant_land',  # was 'Vacat Land' - typo, never matched
             'Commercial': 'commercial',
         }
         return mapping.get(rf_type, 'single_family')
 
     def to_property_dict(self, parsed: dict) -> dict:
-        """parse_listing() already outputs PropIQ's standard schema - nothing left to transform."""
-        return parsed
-
-# LA COUNTY ASSESSOR SCRAPER
-# Public Records - No Auth Needed. Great For Parcel/Zoning Data.
-class LACountyAssessorScraper(BaseScraper):
-    """
-    Fetches parcel data from the LA County Assessor's public portal.
-    Provides: APN, assessed value, zoning, lot size, year built.
-    Endpoint: https://www.lacounty.gov/api
-    """
-
-    def __init__(self):
-        config = ScraperConfig(
-            source_name='la_county_assessor',
-            base_url='https://assessor.lacounty.gov',
-            requests_per_minute=30,
-        )
-        super().__init__(config)
-
-    def fetch_listings(self, zip_codes: list[str]) -> list[dict]:
-        all_records = []
-        for zc in zip_codes:
-            records = self._search_by_zip(zc)
-            all_records.extend(records)
-            logger.info(f'[la_assessor] zip={zc} -> {len(records)} parcels')
-        return all_records
-
-    def _search_by_zip(self, zip_code: str) -> list[dict]:
-        resp = self.get(
-            f'{self.config.base_url}/api/assessor/search',
-            params={
-                'zipcode': zip_code,
-                'count': 500,
-                'start': 0,
-            }
-        )
-        if not resp:
-            return []
-        data = resp.json()
-        return data.get('features', [])
-
-    def parse_listing(self, raw: dict) -> dict:
-        props = raw.get('attributes', {})
-        geo = raw.get('geometry', {}).get('rings', [[[]]])[0][0]
-
-        return {
-            'source': 'la_county_assessor',
-            'source_id': props.get('APN', ''),
-            'source_url': props.get('APN', ''),
-
-            'address': props.get('SitusAddress', ''),
-            'city': props.get('SitusCity', ''),
-            'state': 'CA',
-            'zip_code': str(props.get('SitusZop5', '')),
-            'latitude': geo[1] if geo else None,
-            'longitude': geo[2] if geo else None,
-
-            'property_type': self._map_use_code(props.get('UseType', '')),
-            'zoning': props.get('ZoneCode'),
-            'lot_size_sqft': props.get('LotSizeSqFt'),
-            'building_sqft': props.get('ImprovementSqFt'),
-            'year_built': props.get('EffectiveYearBuilt'),
-            'bedrooms': props.get('Bedrooms'),
-            'bathrooms': props.get('Bathrooms'),
-            'units': props.get('Units', 1),
-
-            'assessed_value': props.get('NetTaxableValue'),
-            'last_sale_price': props.get('LastSaleAmount'),
-            'last_sale_date': props.get('LastSaleDate'),
-
-            'raw_data': props,
-        }
-
-    def _map_use_code(self, code: str) -> str:
-        # LA County use codes -> PropIQ types
-        residential = {'0100', '0101', '0103', '0104'}
-        multi = {'0200', '0201', '0204'}
-        commercial = {'1000', '1001', '1100', '1101'}
-        if code in residential: return 'single_family'
-        if code in multi: return 'multi_family'
-        if code in commercial: return 'commercial'
-        if code.startswith('8'): return 'vacant_land'
-        return 'single_family'
-
-    def to_property_dict(self, parsed: dict) -> dict:
-        """parse_listing() already outputs PropIQ's standard schema - nothing left to transform."""
         return parsed

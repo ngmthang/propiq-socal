@@ -156,9 +156,10 @@ class InferenceEngine:
             "id", "address", "zip_code", "latitude", "longitude", "property_type",
             "bedrooms", "bathrooms", "building_sqft", "lot_size_sqft", "year_built",
             "list_price", "sale_price", "walk_score", "transit_score", "school_rating",
-            "development_score", "adu_eligible", "underbuilt_ratio", "distance_to_cbd_miles",
-            "distance_to_coast_miles", "neighborhood_median_price", "price_change_yoy",
-            "days_on_market", "inventory_months", "absorption_rate", "neighborhood_name",
+            "development_score", "adu_eligible", "underbuilt_ratio", "far_ratio",
+            "distance_to_cbd_miles", "distance_to_coast_miles", "neighborhood_median_price",
+            "price_change_yoy", "days_on_market", "inventory_months", "absorption_rate",
+            "neighborhood_name",
         ]
         return {k: v for k, v in ((k, getattr(property_row, k, None)) for k in keys) if v is not None}
 

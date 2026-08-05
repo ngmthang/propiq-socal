@@ -38,14 +38,16 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       AVM_MODEL_PATH: /app/models/saved/avm/latest
       LSTM_MODEL_PATH: /app/models/saved/lstm/latest
+      RAPIDAPI_KEY: ${RAPIDAPI_KEY:-}
     ports:
       - "8000:8000"
     volumes:
-      # Mount model artifacts so retrains (from the worker or the API's own
-      # MLScheduler) are picked up without rebuilding the image.
       - propiq_models:/app/models
+      - ./api_layer:/app/api_layer
+      - ./data_layer:/app/data_layer
+      - ./ml_layer:/app/ml_layer
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
       interval: 15s
       timeout: 5s
       retries: 5

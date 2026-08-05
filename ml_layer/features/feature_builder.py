@@ -119,9 +119,49 @@ class FeatureBuilder:
     def _opportunity_features(self, df: pd.DataFrame) -> pd.DataFrame:
         df['development_score'] = df.get('development_score', pd.Series(50.0, index=df.index)).fillna(50.0)
         df['adu_eligible'] = df.get('adu_eligible', pd.Series(0, index=df.index)).fillna(0).astype(int)
-        df['underbuilt_ratio'] = df.get('underbuilt_ratio', pd.Series(0.3, index=df.index)).fillna(0.3)
+        df['underbuilt_ratio'] = self._underbuilt_ratio(df)
         df['renovation_score'] = self._renovation_score(df)
         return df
+
+    def _underbuilt_ratio(self, df: pd.DataFrame) -> pd.Series:
+        """
+        0-1: how far the existing structure sits below its buildable
+        envelope (higher = more room to add sqft = more opportunity).
+
+        Two paths:
+          - far_ratio present (real zoning data): 1 - building_sqft / (lot_size_sqft * far_ratio)
+          - far_ratio absent: heuristic against a ~40% typical residential
+            lot coverage ratio, so this degrades gracefully instead of
+            jumping straight to a flat constant.
+
+         IMPORTANT: this column was previously a flat 0.3 for every row,
+        including every AVM training row - the model has essentially
+        learned zero real weight for it. This function is called by both
+        training (avm_trainer -> FeatureBuilder.build) and serving, so
+        train/serve are now CONSISTENT - but the AVM has not yet actually
+        learned from real underbuilt_ratio values. A retrain is required
+        before predictions influenced by this feature should be trusted.
+        Until retrained, treat this as wired-but-unvalidated.
+
+        VERIFIED Aug 2026: real per-property values now compute correctly
+        (e.g. 0.777 for an underbuilt lot vs 0.0 for a fully-built one) and
+        reach the model, but shift raw predictions by only ~$10-40 -
+        confirms near-zero learned weight, consistent with this feature
+        never appearing in SHAP top-5 drivers. Not a bug; expected until
+        the next AVM retrain incorporates real variance in this input.
+        """
+        bsqft = df['building_sqft'].clip(lower=1)
+        lsqft = df['lot_size_sqft'].clip(lower=1)
+
+        far = pd.to_numeric(df.get('far_ratio'), errors='coerce')
+        max_buildable_far = (lsqft * far).clip(lower=1)
+        ratio_far = (1 - bsqft / max_buildable_far).clip(lower=0, upper=1)
+
+        TYPICAL_COVERAGE = 0.40
+        coverage = bsqft / lsqft
+        ratio_fallback = (1 - coverage / TYPICAL_COVERAGE).clip(lower=0, upper=1)
+
+        return ratio_far.fillna(ratio_fallback).fillna(0.3)
 
     def _renovation_score(self, df: pd.DataFrame) -> pd.Series:
         age_score = (df['property_age'].clip(0, 100) / 100 * 50)
