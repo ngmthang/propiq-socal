@@ -167,3 +167,121 @@ class RedfinScraper(BaseScraper):
 
     def to_property_dict(self, parsed: dict) -> dict:
         return parsed
+
+# LA COUNTY ASSESSOR SCRAPER
+# Public Records - No Auth Needed. Great For Parcel/Zoning Data.
+class LACountyAssessorScraper(BaseScraper):
+    """
+    Fetches parcel data from LA County's public ArcGIS MapServer layer.
+    Provides: AIN/APN, assessed value (land+improvement), use type, sqft,
+    year built, bed/bath counts.
+
+    Endpoint verified live Aug 2026:
+    https://public.gis.lacounty.gov/public/rest/services/LACounty_Cache/LACounty_Parcel/MapServer/0
+    Owner name/mailing address are NOT exposed on this layer per CA Gov
+    Code §7928.205 - use SitusFullAddress only, no PII risk here.
+
+    Prior version of this class pointed at a fabricated endpoint
+    (assessor.lacounty.gov/api/assessor/search) that never existed -
+    rewritten against the real, verified ArcGIS layer instead.
+    """
+
+    def __init__(self):
+        config = ScraperConfig(
+            source_name='la_county_assessor',
+            base_url='https://public.gis.lacounty.gov/public/rest/services/LACounty_Cache/LACounty_Parcel/MapServer/0',
+            requests_per_minute=30,
+        )
+        super().__init__(config)
+
+    def fetch_listings(self, zip_codes: list[str]) -> list[dict]:
+        all_records = []
+        for zc in zip_codes:
+            records = self._search_by_zip(zc)
+            all_records.extend(records)
+            logger.info(f'[la_assessor] zip={zc} -> {len(records)} parcels')
+        return all_records
+
+    def _search_by_zip(self, zip_code: str) -> list[dict]:
+        all_features = []
+        offset = 0
+        page_size = 500
+        while True:
+            resp = self.get(
+                f'{self.config.base_url}/query',
+                params={
+                    'where': f"SitusZIP='{zip_code}'",
+                    'outFields': '*',
+                    'f': 'json',
+                    'resultOffset': offset,
+                    'resultRecordCount': page_size,
+                }
+            )
+            if not resp:
+                break
+            try:
+                data = resp.json()
+            except Exception as e:
+                logger.warning(f'[la_assessor] zip={zip_code} - failed to parse JSON: {e}')
+                break
+
+            features = data.get('features', [])
+            all_features.extend(features)
+
+            if len(features) < page_size:
+                break
+            offset += page_size
+
+        return all_features
+
+    def parse_listing(self, raw: dict) -> dict:
+        props = raw.get('attributes', {}) or {}
+
+        city = (props.get('SitusCity') or '').strip()
+        if city.upper().endswith(' CA'):
+            city = city[:-3].strip()
+
+        return {
+            'source': 'la_county_assessor',
+            'source_id': props.get('AIN', ''),
+            'source_url': f"https://portal.assessor.lacounty.gov/parceldetail/{props.get('AIN', '')}",
+
+            'address': props.get('SitusFullAddress', ''),
+            'city': city,
+            'state': 'CA',
+            'zip_code': props.get('SitusZIP', ''),
+            'latitude': props.get('CENTER_LAT'),
+            'longitude': props.get('CENTER_LON'),
+
+            'property_type': self._map_use_code(props.get('UseCode', '')),
+            'zoning': None,
+            'lot_size_sqft': props.get('Shape.STArea()'),
+            'building_sqft': props.get('SQFTmain1'),
+            'year_built': props.get('YearBuilt1'),
+            'bedrooms': props.get('Bedrooms1'),
+            'bathrooms': props.get('Bathrooms1'),
+            'units': props.get('Units1', 1),
+
+            'assessed_value': (props.get('Roll_LandValue') or 0) + (props.get('Roll_ImpValue') or 0),
+            'last_sale_price': None,
+            'last_sale_date': None,
+
+            'raw_data': props,
+        }
+
+    def _map_use_code(self, use_code: str) -> str:
+        residential = {'0100', '0101', '0102', '0103', '0104'}
+        multi = {'0200', '0201', '0202', '0203', '0204'}
+        commercial = {'1000', '1001', '1100', '1101'}
+        if use_code in residential:
+            return 'single_family'
+        if use_code in multi:
+            return 'multi_family'
+        if use_code in commercial:
+            return 'commercial'
+        if str(use_code).startswith('8'):
+            return 'vacant_land'
+        return 'single_family'
+
+    def to_property_dict(self, parsed: dict) -> dict:
+        return parsed
