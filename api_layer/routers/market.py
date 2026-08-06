@@ -26,10 +26,14 @@ from ..schemas.market import MarketSnapshot, MarketTrendResponse
 router = APIRouter(prefix="/api/market", tags=["market"], dependencies=[Depends(get_current_user)])
 
 def _build_snapshot(db: Session, zip_code: str) -> MarketSnapshot:
+    # Property.list_price is real (Redfin-ingested), but ingestion is
+    # zip-by-zip - coalesce to the AVM estimate so a not-yet-enriched zip
+    # shows a reasonable number instead of a blank stat.
+    list_price_col = func.coalesce(Property.list_price, Property.estimated_value)
     row = (
         db.query(
             func.percentile_cont(0.5).within_group(Property.sale_price.asc()).label("median_sale"),
-            func.percentile_cont(0.5).within_group(Property.list_price.asc()).label("median_list"),
+            func.percentile_cont(0.5).within_group(list_price_col.asc()).label("median_list"),
             func.count(Property.id).label("inventory_count"),
         )
         .filter(Property.zip_code == zip_code)
@@ -63,9 +67,8 @@ def get_market_trend(
         )
 
     try:
-        history = load_market_history(settings.DATABASE_URL)
-        zip_history = history[history["zip_code"] == zip_code].sort_values("month")
-        forecast = engine.forecast(zip_code, zip_history)
+        history = load_market_history(settings.DATABASE_URL, zip_code=zip_code)
+        forecast = engine.forecast(zip_code, history)
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -73,6 +76,12 @@ def get_market_trend(
         ) from e
 
     snapshot = _build_snapshot(db, zip_code)
+
+    historical_median_price = [
+        {"month": row.month.strftime("%Y-%m"), "median_price": row.median_price}
+        for row in history.itertuples()
+        if row.median_price is not None
+    ]
 
     return MarketTrendResponse(
         zip_code=zip_code,
@@ -83,5 +92,5 @@ def get_market_trend(
         trend_signal=forecast.trend_signal,
         model_version=forecast.model_version,
         predicted_at=forecast.predicted_at,
-        historical_median_price=[], # populate from a data_layer time-series query
+        historical_median_price=historical_median_price,
     )

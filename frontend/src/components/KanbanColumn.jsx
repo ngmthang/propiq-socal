@@ -8,9 +8,9 @@ export default function KanbanColumn({id, title, tasks}) {
     return (
       <div
         ref={setNodeRef}
-        className={'flex w-72 shrink-0 flex-col rounded-xl border p-3 transition-colors ${' +
-            'isOver ? "border-terracotta bg-terracotta/5" : "border-line bg-white/40"' +
-            '}'}
+        className={`flex w-72 shrink-0 flex-col rounded-xl border p-3 transition-colors ${
+            isOver ? "border-terracotta bg-terracotta/5" : "border-line bg-white/40"
+        }`}
       >
           <div className="mb-3 flex items-center justify-between px-1">
               <h3 className="text-sm font-semibold text-ink/70">{title}</h3>

@@ -50,7 +50,7 @@ export default function valueTrendChart({history = [], forecast = []}) {
         // gridlines
         svg
             .append("g")
-            .attr("transform", `translate(0, ${height - margin.bottom}`)
+            .attr("transform", `translate(0, ${height - margin.bottom})`)
             .call(
                 d3
                     .axisBottom(x)
@@ -90,6 +90,26 @@ export default function valueTrendChart({history = [], forecast = []}) {
                     .attr("font-family", "IBM Plex Mono")
             );
 
+        // Historical line (solid, terracotta) - actual past-months trend.
+        // This was missing entirely before: only a single dot marked the
+        // last known value, with the mislabeled "historical" line below
+        // actually being the dashed forecast bridge.
+        if(hist.length > 1) {
+            const hLine = d3
+                .line()
+                .x((d) => x(d.date))
+                .y((d) => y(d.value))
+                .curve(d3.curveMonotoneX);
+
+            svg
+                .append("path")
+                .datum(hist)
+                .attr("d", hLine)
+                .attr("fill", "none")
+                .attr("stroke", "#A6461F")
+                .attr("stroke-width", 2.5);
+        }
+
         // Forecast confidence band
         if(fcast.length) {
             const band = d3
@@ -107,7 +127,8 @@ export default function valueTrendChart({history = [], forecast = []}) {
                 .attr("fill-opacity", 0.12);
         }
 
-        // Historical line (solid, terracotta)
+        // Forecast line (dashed, marine) - bridges from the last known
+        // historical point through the projected horizons.
         if(fcast.length) {
             const bridge = [hist[hist.length - 1], ...fcast].filter(Boolean);
             const fLine = d3

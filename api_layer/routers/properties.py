@@ -16,8 +16,10 @@ from sqlalchemy.orm import Session
 
 from data_layer.models.database import Property
 from ml_layer.inference.engine import InferenceEngine, InsufficientDataError
+from ml_layer.utils.db import load_market_history
 
 from ..core.auth import get_current_user
+from ..core.config import settings
 from ..core.db import get_db
 from ..dependencies.ml import get_inference_engine
 from ..schemas.common import FeatureDriver
@@ -47,7 +49,41 @@ def _get_property_or_404(db: Session, property_id: int) -> Property:
 @router.get("/{property_id}", response_model=PropertyDetail)
 def get_property(property_id: int, db: Session = Depends(get_db)) -> PropertyDetail:
     prop = _get_property_or_404(db, property_id)
-    return PropertyDetail.model_validate(prop)
+
+    data = dict(
+        id=prop.id, address=prop.address, city=prop.city, zip_code=prop.zip_code,
+        beds=prop.bedrooms, baths=prop.bathrooms,
+        building_sqft=prop.building_sqft, lot_sqft=prop.lot_size_sqft,
+        year_built=prop.year_built, list_price=prop.list_price, sale_price=prop.sale_price,
+        latitude=prop.latitude, longitude=prop.longitude,
+
+        property_type=prop.property_type.value if prop.property_type else None,
+        county=prop.county, state=prop.state, parcel_number=prop.parcel_number,
+        zoning=prop.zoning.value if prop.zoning else None,
+        stories=prop.stories, units=prop.units,
+        garage_spaces=prop.garage_spaces, pool=prop.pool,
+
+        last_sale_price=prop.last_sale_price, last_sold_date=prop.last_sale_date,
+        assessed_value=prop.assessed_value, price_per_sqft=prop.price_per_sqft,
+
+        estimated_value=prop.estimated_value,
+        data_source=prop.data_source, updated_at=prop.updated_at,
+    )
+
+    if prop.features:
+        data.update(
+            walk_score=prop.features.walk_score,
+            transit_score=prop.features.transit_score,
+            bike_score=prop.features.bike_score,
+            school_rating=prop.features.school_rating,
+            distance_to_downtown_mi=prop.features.distance_to_downtown_mi,
+            flood_zone=prop.features.flood_zone,
+            fire_hazard_zone=prop.features.fire_hazard_zone,
+        )
+    if prop.neighborhood:
+        data["neighborhood_name"] = prop.neighborhood.neighborhood_name
+
+    return PropertyDetail(**data)
 
 @router.get("/{property_id}/valuation", response_model=ValuationResponse)
 def get_valuation(
@@ -102,7 +138,11 @@ def get_analysis(
     prop = _get_property_or_404(db, property_id)
 
     try:
-        full = engine.analyze_property(prop, include_ai=include_ai)
+        # Without this, analyze_property() always falls back to the neutral
+        # 0/0/0 "unavailable" forecast, regardless of whether an LSTM model
+        # is trained - forecast() requires market_history_df to do anything.
+        market_history_df = load_market_history(settings.DATABASE_URL, zip_code=prop.zip_code)
+        full = engine.analyze_property(prop, market_history_df=market_history_df, include_ai=include_ai)
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

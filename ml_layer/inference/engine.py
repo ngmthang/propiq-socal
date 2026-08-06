@@ -213,7 +213,15 @@ class InferenceEngine:
 
         feat_cols = self.lstm.config.feature_cols
         lb = self.lstm.config.lookback_months
-        seq = market_history_df.tail(lb)[feat_cols].values
+        # Must match LSTMTrainer.train()'s preprocessing exactly: two of
+        # these columns (median_price_per_sqft, new_listings) are always
+        # NaN - not tracked at the monthly grain, see load_market_history -
+        # and NaN silently poisons the ENTIRE LSTM output (it propagates
+        # through matrix multiplication), not just that one feature. Every
+        # forecast was coming back NaN -> null in the API response -> the
+        # frontend chart treating null as 0% change, i.e. a flat line that
+        # looked like "no predicted movement" but was actually "broken."
+        seq = market_history_df.tail(lb)[feat_cols].fillna(0).values
         if len(seq) < lb:
             pad = np.zeros((lb - len(seq), len(feat_cols)))
             seq = np.vstack([pad, seq])

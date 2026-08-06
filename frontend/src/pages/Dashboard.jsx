@@ -1,36 +1,76 @@
 import {useEffect, useMemo, useState} from "react";
+import {useNavigate} from "react-router-dom";
 import {propertiesApi} from "../api/client.js";
 import PropertyCard from "../components/PropertyCard.jsx"
 import PropertyMap from "../components/PropertyMap.jsx";
 import StatCard from "../components/StatCard.jsx";
 
+const PAGE_SIZE = 40;
+
 export default function Dashboard() {
-    const [zip, setZip] = useState("90210");
+    const navigate = useNavigate();
+
+    // Filters are optional now - leaving all three blank searches every
+    // property PropIQ has (currently all of Orange County). Filling in a
+    // zip/city/county scopes both the list and the map to that area.
+    const [filterInputs, setFilterInputs] = useState({zip_code: "", city: "", county: ""});
+    const [filters, setFilters] = useState({});
+
     const [properties, setProperties] = useState([]);
+    const [page, setPage] = useState(1);
+    const [total, setTotal] = useState(0);
+    const [hasNext, setHasNext] = useState(false);
     const [activeId, setActiveId] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [loadingMore, setLoadingMore] = useState(false);
     const [error, setError] = useState("");
 
+    // Applying a filter resets pagination and starts a fresh list load.
     useEffect(() => {
         let cancelled = false;
         setLoading(true);
         setError("");
+        setPage(1);
 
         propertiesApi
-            .search({zip_code: zip, page_size: 40, include_analysis: true})
+            .search({...filters, page: 1, page_size: PAGE_SIZE, include_analysis: true})
             .then((res) => {
-                if(cancelled) return;
+                if (cancelled) return;
                 setProperties(res.data.items ?? []);
+                setTotal(res.data.total ?? 0);
+                setHasNext(res.data.has_next ?? false);
             })
             .catch(() => {
-                if(!cancelled) setError("Couldn't load properties for that zip code.");
+                if (!cancelled) setError("Couldn't load properties for that filter.");
             })
             .finally(() => !cancelled && setLoading(false));
 
         return () => {
             cancelled = true;
         };
-    }, [zip]);
+    }, [filters]);
+
+    function loadMore() {
+        const nextPage = page + 1;
+        setLoadingMore(true);
+        propertiesApi
+            .search({...filters, page: nextPage, page_size: PAGE_SIZE, include_analysis: true})
+            .then((res) => {
+                setProperties((prev) => [...prev, ...(res.data.items ?? [])]);
+                setHasNext(res.data.has_next ?? false);
+                setPage(nextPage);
+            })
+            .catch(() => setError("Couldn't load more properties."))
+            .finally(() => setLoadingMore(false));
+    }
+
+    function applyFilters(e) {
+        e.preventDefault();
+        const cleaned = Object.fromEntries(
+            Object.entries(filterInputs).filter(([, v]) => v.trim() !== "")
+        );
+        setFilters(cleaned);
+    }
 
     useEffect(() => {
         if (activeId == null) return;
@@ -38,8 +78,9 @@ export default function Dashboard() {
             .getElementById(`property-card-${activeId}`)
             ?.scrollIntoView({behavior: "smooth", block: "nearest"});
     }, [activeId]);
+
     const stats = useMemo(() => {
-        if(!properties.length) return null;
+        if (!properties.length) return null;
         const avgLift =
             properties.reduce((sum, p) => sum + (p.value_delta_pct ?? 0), 0) /
             properties.length;
@@ -49,6 +90,14 @@ export default function Dashboard() {
         );
         return {count: properties.length, avgLift, totalValue};
     }, [properties]);
+
+    // A map pin belonging to a property outside the currently loaded list
+    // page still opens fine - it just goes straight to the detail page,
+    // same as clicking a card does.
+    function handleMapSelect(id) {
+        setActiveId(id);
+        navigate(`/properties/${id}`);
+    }
 
     return (
         <div className="flex h-screen flex-col">
@@ -60,22 +109,51 @@ export default function Dashboard() {
                             Predicted values and improvement opportunities across SoCal.
                         </p>
                     </div>
-                    <form
-                        onSubmit={(e) => e.preventDefault()}
-                        className="flex items-center gap-2"
-                    >
+                    <form onSubmit={applyFilters} className="flex items-center gap-2">
                         <input
-                            className="field-input w-36"
-                            value={zip}
-                            onChange={(e) => setZip(e.target.value)}
+                            className="field-input w-28"
+                            value={filterInputs.zip_code}
+                            onChange={(e) =>
+                                setFilterInputs((f) => ({...f, zip_code: e.target.value}))
+                            }
                             placeholder="Zip code"
                         />
+                        <input
+                            className="field-input w-32"
+                            value={filterInputs.city}
+                            onChange={(e) => setFilterInputs((f) => ({...f, city: e.target.value}))}
+                            placeholder="City"
+                        />
+                        <input
+                            className="field-input w-32"
+                            value={filterInputs.county}
+                            onChange={(e) => setFilterInputs((f) => ({...f, county: e.target.value}))}
+                            placeholder="County"
+                        />
+                        <button type="submit" className="btn-primary">
+                            Filter
+                        </button>
+                        {Object.keys(filters).length > 0 && (
+                            <button
+                                type="button"
+                                className="text-xs font-medium text-ink/50 hover:text-ink"
+                                onClick={() => {
+                                    setFilterInputs({zip_code: "", city: "", county: ""});
+                                    setFilters({});
+                                }}
+                            >
+                                Clear
+                            </button>
+                        )}
                     </form>
                 </div>
 
                 {stats && (
                     <div className="mt-5 grid grid-cols-3 gap-3">
-                        <StatCard label="Properties tracked" value={stats.count}/>
+                        <StatCard
+                            label="Properties tracked"
+                            value={`${stats.count.toLocaleString()} of ${total.toLocaleString()}`}
+                        />
                         <StatCard
                             label="Avg. predicted lift"
                             value={`${stats.avgLift >= 0 ? "+" : ""}${stats.avgLift.toFixed(1)}%`}
@@ -100,7 +178,7 @@ export default function Dashboard() {
                     {error && <p className="py-8 text-center text-sm text-clay">{error}</p>}
                     {!loading && !error && properties.length === 0 && (
                         <p className="py-8 text-center text-sm text-ink/45">
-                            No properties found for {zip}.
+                            No properties found for that filter.
                         </p>
                     )}
 
@@ -114,13 +192,23 @@ export default function Dashboard() {
                             />
                         ))}
                     </div>
+
+                    {!loading && hasNext && (
+                        <button
+                            onClick={loadMore}
+                            disabled={loadingMore}
+                            className="mt-4 w-full rounded-lg border border-line bg-white/60 py-2.5 text-sm font-medium text-ink/70 hover:border-terracotta/40 disabled:opacity-50"
+                        >
+                            {loadingMore ? "Loading..." : `Load more (${total - properties.length} remaining)`}
+                        </button>
+                    )}
                 </div>
 
                 <div className="flex-1 p-4">
                     <PropertyMap
-                        properties={properties}
+                        filters={filters}
                         activeId={activeId}
-                        onSelect={setActiveId}
+                        onSelect={handleMapSelect}
                     />
                 </div>
             </div>

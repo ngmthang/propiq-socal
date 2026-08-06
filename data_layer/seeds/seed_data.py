@@ -128,7 +128,12 @@ def make_property(owner_id: int) -> Property:
         last_sale_price=sale_price,
         last_sale_date=sale_date,
         assessed_value=round(intrinsic_value * random.uniform(0.85, 1.0), 2),
-        estimated_value=list_price_val,
+        # A real column now (migration a1c9f3d2e7b4) - this used to go into
+        # estimated_value as a workaround since list_price didn't exist.
+        # estimated_value itself is intentionally left unset here: it's the
+        # AVM's own prediction, not something seed data should pre-fill with
+        # fabricated ground truth.
+        list_price=list_price_val,
         price_per_sqft=round(sale_price / building_sqft, 2) if building_sqft else None,
         data_source="seed_synthetic",
         is_verified=True,

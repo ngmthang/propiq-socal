@@ -143,6 +143,7 @@ class Property(Base):
     last_sale_date = Column(DateTime)
     assessed_value = Column(Float)
     estimated_value = Column(Float)
+    list_price = Column(Float)  # real, market-observed - see migration a1c9f3d2e7b4
     price_per_sqft = Column(Float)
 
     # Metadata
@@ -193,14 +194,6 @@ class Property(Base):
     @sale_price.expression
     def sale_price(cls):
         return cls.last_sale_price
-
-    @hybrid_property
-    def list_price(self):
-        return self.estimated_value  # proxy — no real listing-price column yet
-
-    @list_price.expression
-    def list_price(cls):
-        return cls.estimated_value
 
     @hybrid_property
     def last_sold_date(self):

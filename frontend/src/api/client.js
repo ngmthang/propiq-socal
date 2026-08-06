@@ -34,6 +34,7 @@ export const authApi = {
 
 export const propertiesApi = {
     search: (params) => client.get("/search", { params }),
+    mapPins: (params, signal) => client.get("/search/map", { params, signal }),
     get: (id) => client.get(`/properties/${id}`),
     valuation: (id) => client.get(`/properties/${id}/valuation`),
     analysis: (id) => client.get(`/properties/${id}/analysis`),
