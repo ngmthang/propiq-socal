@@ -143,6 +143,17 @@ def get_analysis(
         # is trained - forecast() requires market_history_df to do anything.
         market_history_df = load_market_history(settings.DATABASE_URL, zip_code=prop.zip_code)
         full = engine.analyze_property(prop, market_history_df=market_history_df, include_ai=include_ai)
+    except InsufficientDataError as exc:
+        # Same condition /valuation reports as a 422 - a property with no
+        # AVM inputs isn't a server fault, and analyze_property() hits the
+        # same gate internally since it valuates before it forecasts/scores.
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                'message': 'Insufficient property data for a reliable analysis',
+                'missing_fields': exc.missing_fields,
+            },
+        ) from exc
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

@@ -20,6 +20,20 @@ const DATA_SOURCE_LABELS = {
     oc_parcel_gis: "Real OC county parcel",
 };
 
+const ZONING_LABELS = {
+    R1: "R1 - Single-family residential",
+    R2: "R2 - Multi-family (medium density)",
+    R3: "R3 - Multi-family (high density)",
+    C1: "C1 - Neighborhood commercial",
+    C2: "C2 - General commercial",
+    I1: "I1 - Light industrial",
+    I2: "I2 - Heavy industrial",
+    M1: "M1 - Mixed use",
+    A1: "A1 - Agricultural",
+    OS: "OS - Open space",
+    UNK: "Unknown",
+};
+
 function DetailField({label, value}) {
     return (
         <div>
@@ -120,13 +134,25 @@ export default function PropertyDetail() {
     // last known historical month so the chart has something to draw a
     // forecast line/band through. Confidence bands widen with horizon
     // length since further-out forecasts are inherently less certain.
-    const chartHistory = useMemo(
-        () =>
-            (marketTrend?.historical_median_price ?? [])
-                .filter((pt) => pt.median_price != null)
-                .map((pt) => ({date: `${pt.month}-01`, value: pt.median_price})),
-        [marketTrend]
-    );
+    const chartHistory = useMemo(() => {
+        const raw = (marketTrend?.historical_median_price ?? [])
+            .filter((pt) => pt.median_price != null)
+            .map((pt) => ({date: `${pt.month}-01`, value: pt.median_price}));
+
+        // historical_median_price is the ZIP's aggregate median, not this
+        // property's own value - those are different numbers by design
+        // (half of properties are below their zip's median, half above).
+        // Re-anchor the trend's shape onto this property's own estimate so
+        // the chart's last point matches "Current estimate" instead of a
+        // disconnected zip-level figure sitting right next to it.
+        const anchor = valuation?.estimated_value;
+        const zipLast = raw[raw.length - 1]?.value;
+        if (!anchor || !zipLast) return raw;
+
+        return raw.map((pt) => ({date: pt.date, value: anchor * (pt.value / zipLast)}));
+    }, [marketTrend, valuation]);
+
+    const chartIsScaledToProperty = Boolean(valuation?.estimated_value && chartHistory.length);
 
     const forecastHorizons = marketTrend
         ? [marketTrend.forecast_3mo, marketTrend.forecast_6mo, marketTrend.forecast_12mo]
@@ -191,24 +217,55 @@ export default function PropertyDetail() {
             <div className="mt-6 grid grid-cols-3 gap-4">
 
                 <div className="panel p-5">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-ink/45">
-                        Current estimate
-                    </p>
-                    {valuationUnavailable ? (
+                    {property.list_price != null ? (
                         <>
-                            <p className="mt-1 text-sm font-medium text-ink/60">
-                                Valuation unavailable
+                            <p className="text-xs font-semibold uppercase tracking-wide text-ink/45">
+                                Real list price
+                            </p>
+                            <p className="mt-1 font-mono text-2xl font-medium">
+                                {currency(property.list_price)}
                             </p>
                             <p className="mt-1 text-xs text-ink/40">
-                                This county parcel record is missing{" "}
+                                Actual price from a real listing - not a model estimate
+                            </p>
+                        </>
+                    ) : property.last_sale_price != null ? (
+                        <>
+                            <p className="text-xs font-semibold uppercase tracking-wide text-ink/45">
+                                Real last sale price
+                            </p>
+                            <p className="mt-1 font-mono text-2xl font-medium">
+                                {currency(property.last_sale_price)}
+                            </p>
+                            <p className="mt-1 text-xs text-ink/40">
+                                Actual recorded sale
+                                {property.last_sold_date
+                                    ? ` (${new Date(property.last_sold_date).toLocaleDateString()})`
+                                    : ""} - not a model estimate
+                            </p>
+                        </>
+                    ) : valuationUnavailable ? (
+                        <>
+                            <p className="text-xs font-semibold uppercase tracking-wide text-ink/45">
+                                Current price
+                            </p>
+                            <p className="mt-1 text-sm font-medium text-ink/60">
+                                Not available
+                            </p>
+                            <p className="mt-1 text-xs text-ink/40">
+                                No real market price on file, and this county parcel record is
+                                missing{" "}
                                 {valuationUnavailable
                                     .map((f) => f.replace(/_/g, " "))
                                     .join(", ")}{" "}
-                                — not enough data for a reliable estimate.
+                                — not enough data for a reliable estimate either.
                             </p>
                         </>
                     ) : (
                         <>
+                            <p className="text-xs font-semibold uppercase tracking-wide text-ink/45">
+                                Current estimate
+                            </p>
                             <p className="mt-1 font-mono text-2xl font-medium">
                                 {currency(valuation?.estimated_value)}
                             </p>
@@ -237,12 +294,10 @@ export default function PropertyDetail() {
                 </h2>
                 <div className="panel grid grid-cols-2 gap-x-8 gap-y-4 p-5 text-sm sm:grid-cols-3 lg:grid-cols-4">
                     <DetailField label="Type" value={property.property_type?.replace(/_/g, " ")} />
-                    <DetailField label="Zoning" value={property.zoning} />
-                    <DetailField label="County" value={property.county} />
+                    <DetailField label="Zoning" value={ZONING_LABELS[property.zoning] ?? property.zoning} />                    <DetailField label="County" value={property.county} />
                     <DetailField label="Neighborhood" value={property.neighborhood_name} />
-
-                    <DetailField label="Beds" value={property.beds} />
-                    <DetailField label="Baths" value={property.baths} />
+                    <DetailField label="Beds" value={property.beds || null} />
+                    <DetailField label="Baths" value={property.baths || null} />
                     <DetailField
                         label="Building sqft"
                         value={property.building_sqft ? Math.round(property.building_sqft).toLocaleString() : null}
@@ -252,7 +307,7 @@ export default function PropertyDetail() {
                         value={property.lot_sqft ? Math.round(property.lot_sqft).toLocaleString() : null}
                     />
 
-                    <DetailField label="Year built" value={property.year_built} />
+                    <DetailField label="Year built" value={property.year_built || null} />
                     <DetailField label="Stories" value={property.stories} />
                     <DetailField label="Garage spaces" value={property.garage_spaces} />
                     <DetailField label="Pool" value={property.pool == null ? null : property.pool ? "Yes" : "No"} />
@@ -265,16 +320,19 @@ export default function PropertyDetail() {
                     />
                     <DetailField label="Assessed value" value={property.assessed_value != null ? currency(property.assessed_value) : null} />
 
-                    <DetailField label="Walk score" value={property.walk_score} />
-                    <DetailField label="Transit score" value={property.transit_score} />
-                    <DetailField label="School rating" value={property.school_rating} />
+                    <DetailField label="Walk score" value={property.walk_score != null ? `${property.walk_score} / 100` : null} />
+                    <DetailField label="Transit score" value={property.transit_score != null ? `${property.transit_score} / 100` : null} />
+                    <DetailField
+                        label="School rating"
+                        value={property.school_rating != null ? `${property.school_rating.toFixed(1)} / 10` : null}
+                    />
                     <DetailField
                         label="Distance to downtown"
                         value={property.distance_to_downtown_mi != null ? `${property.distance_to_downtown_mi.toFixed(1)} mi` : null}
                     />
 
-                    <DetailField label="Flood zone" value={property.flood_zone} />
-                    <DetailField label="Fire hazard zone" value={property.fire_hazard_zone} />
+                    <DetailField label="Flood zone" value={property.flood_zone ?? "Not tracked"} />
+                    <DetailField label="Fire hazard zone" value={property.fire_hazard_zone ?? "Not tracked"} />
                     <DetailField
                         label="Data source"
                         value={DATA_SOURCE_LABELS[property.data_source] ?? property.data_source}
@@ -303,6 +361,11 @@ export default function PropertyDetail() {
                         </p>
                     ) : null}
                     <ValueTrendChart history={chartHistory} forecast={chartForecast} />
+                    <p className="mt-2 text-xs text-ink/40">
+                        {chartIsScaledToProperty
+                            ? `Reflects ${property.zip_code}'s market trend, scaled to this property's estimated value.`
+                            : `Reflects ${property.zip_code}'s raw market trend - no property-level estimate to scale to.`}
+                    </p>
                     <div className="mt-2 flex gap-5 font-mono text-xs text-ink/50">
                         <span className="flex items-center gap-1.5">
                             <span className="h-0.5 w-4 bg-terracotta"/> Historical
