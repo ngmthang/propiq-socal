@@ -21,11 +21,10 @@ orders of magnitude past its original design point.
 
 Four layers, each independently testable:
 
-┌─ Layer 4: Frontend ─────────── React + Vite · Tailwind · Mapbox GL (clustered) · D3 · dnd-kit Kanban
-├─ Layer 3: API ─────────────── FastAPI · JWT auth · rate limiting · Sentry · admin observability
-├─ Layer 2: ML/AI ───────────── XGBoost AVM + SHAP · LSTM forecaster (PyTorch) · Claude deal analysis
-└─ Layer 1: Data ────────────── PostgreSQL/SQLAlchemy · county GIS + Zillow ingestion · Alembic · APScheduler
-
+Layer 1: Data - PostgreSQL/SQLAlchemy · county GIS + Zillow ingestion · Alembic · APScheduler
+Layer 2: ML/AI - XGBoost AVM + SHAP · LSTM forecaster (PyTorch) · Claude deal analysis
+Layer 3: API - FastAPI · JWT auth · rate limiting · Sentry · admin observability
+Layer 4: Frontend - React + Vite · Tailwind · Mapbox GL (clustered) · D3 · dnd-kit Kanban
 
 ## The data — what's real, what's synthetic, and where the line is
 
